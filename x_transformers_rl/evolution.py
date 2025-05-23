@@ -1,5 +1,13 @@
 import torch
 from torch.nn import Module
+import torch.nn.functional as F
+
+from einops import reduce, rearrange, repeat
+
+# functions
+
+def l2norm(t):
+    return F.normalize(t, dim = -1)
 
 # latent gene pool
 

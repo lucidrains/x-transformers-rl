@@ -1,3 +1,5 @@
+# environment related
+
 import gymnasium as gym
 from shutil import rmtree
 
@@ -23,10 +25,9 @@ state_dim = env.observation_space.shape[0]
 num_actions = env.action_space.n
 reward_range = (-100, 100)
 
-from x_transformers_rl.x_transformers_rl import (
-    Agent,
-    Learner
-)
+# world-model-actor-critic + learning wrapper
+
+from x_transformers_rl import Learner
 
 learner = Learner(
     state_dim = state_dim,
@@ -42,4 +43,4 @@ learner = Learner(
     )
 )
 
-learner(env)
+learner(env, 50000)

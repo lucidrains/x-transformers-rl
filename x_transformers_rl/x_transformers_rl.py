@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import ceil
 from pathlib import Path
 from copy import deepcopy
 from functools import partial, wraps
@@ -91,6 +92,15 @@ def temp_batch_dim(fn):
         return out
 
     return inner
+
+def from_numpy(t):
+    if isinstance(t, np.float64):
+        t = np.array(t)
+
+    if isinstance(t, np.ndarray):
+        t = torch.from_numpy(t)
+
+    return t.float()
 
 # world model + actor / critic in one
 
@@ -629,7 +639,6 @@ class Learner(Module):
         num_actions,
         reward_range,
         world_model: dict,
-        num_episodes = 50000,
         max_timesteps = 500,
         minibatch_size = 8,
         update_episodes = 64,
@@ -677,7 +686,6 @@ class Learner(Module):
         self.minibatch_size = minibatch_size
 
         self.max_timesteps = max_timesteps
-        self.num_episodes = num_episodes
 
         # saving agent
 
@@ -693,9 +701,14 @@ class Learner(Module):
 
     def forward(
         self,
-        env,
+        env: object,
+        num_episodes: int,
+        max_timesteps = None,
         seed = None,
     ):
+        max_timesteps = default(max_timesteps, self.max_timesteps)
+        num_episodes = ceil(num_episodes / self.update_episodes) * self.update_episodes
+
         device = self.device
 
         memories = deque([])
@@ -711,14 +724,20 @@ class Learner(Module):
         self.agent.eval()
         model = self.agent.ema_model
 
-        for eps in tqdm(range(self.num_episodes), desc = 'episodes'):
+        for eps in tqdm(range(num_episodes), desc = 'episodes'):
 
             one_episode_memories = deque([])
 
             eps_tensor = tensor(eps)
 
-            state, info = env.reset(seed = seed)
-            state = torch.from_numpy(state).to(device)
+            reset_out = env.reset(seed = seed)
+
+            if isinstance(reset_out, tuple):
+                state, *_ = reset_out
+            else:
+                state = reset_out
+
+            state = from_numpy(state).to(device)
 
             prev_action = tensor(-1).to(device)
             prev_reward = tensor(0.).to(device)
@@ -750,18 +769,26 @@ class Learner(Module):
                 values = rearrange(values, '1 1 d -> d')
                 return action_probs, values
 
-            for timestep in range(self.max_timesteps):
+            for timestep in range(max_timesteps):
                 time += 1
-                
+
                 action_probs, value = state_to_pred_action_and_value(state, prev_action, prev_reward)
 
                 dist = Categorical(action_probs)
                 action = dist.sample()
                 action_log_prob = dist.log_prob(action)
 
-                next_state, reward, terminated, truncated, _ = env.step(action.item())
+                env_step_out = env.step(action.item())
 
-                next_state = torch.from_numpy(next_state).to(device)
+                if len(env_step_out) >= 4:
+                    next_state, reward, terminated, truncated, *_ = env_step_out
+                elif len(env_step_out) == 3:
+                    next_state, reward, terminated = env_step_out
+                    truncated = False
+                else:
+                    raise Error('invalid number of returns from environment .step')
+
+                next_state = from_numpy(next_state).to(device)
 
                 reward = float(reward)
 
