@@ -83,6 +83,9 @@ def divisible_by(num, den):
 def normalize(t, eps = 1e-5):
     return (t - t.mean()) / (t.std() + eps)
 
+def softclamp(t, value):
+    return (t / value).tanh() * value
+
 def frac_gradient(t, frac = 1.):
     assert 0 <= frac <= 1.
     return t.detach() * (1. - frac) + t * frac
@@ -92,6 +95,19 @@ def log(t, eps = 1e-20):
 
 def entropy(prob):
     return (-prob * log(prob)).sum()
+
+def pad_at_dim(
+    t,
+    pad: tuple[int, int],
+    dim = -1,
+    value = 0.
+):
+    if pad == (0, 0):
+        return t
+
+    dims_from_right = (- dim - 1) if dim < 0 else (t.ndim - dim - 1)
+    zeros = ((0, 0) * dims_from_right)
+    return F.pad(t, (*zeros, *pad), value = value)
 
 def temp_batch_dim(fn):
     @wraps(fn)
@@ -177,12 +193,13 @@ class Discrete:
 class Continuous:
     def __init__(
         self,
-        raw_actions: Tensor
+        raw_actions: Tensor,
     ):
         raw_actions = rearrange(raw_actions, '... (d muvar) -> ... d muvar', muvar = 2)
         self.raw_actions = raw_actions
 
         mean, log_variance = raw_actions.unbind(dim = -1)
+
         variance = log_variance.exp()
 
         self.mean_variance = stack((mean, variance))
@@ -195,9 +212,8 @@ class Continuous:
         num_actions,
         bias = True
     ) -> Module:
-
         return nn.Sequential(
-            nn.LayerNorm(dim, bias = False),
+            nn.RMSNorm(dim),
             nn.Linear(dim, num_actions * 2, bias = bias)
         )
 
@@ -807,7 +823,12 @@ class Agent(Module):
                 seq = torch.arange(states.shape[1], device = self.device)
                 mask = einx.less('n, b -> b n', seq, episode_lens)
 
-                prev_actions = F.pad(actions, (1, -1), value = -1)
+                prev_actions = pad_at_dim(
+                    actions,
+                    (1, -1),
+                    dim = 1,
+                    value = 0. if self.continuous_actions else -1
+                )
 
                 rewards = F.pad(rewards, (1, -1), value = 0.)
 
