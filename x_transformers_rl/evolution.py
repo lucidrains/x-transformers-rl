@@ -4,6 +4,7 @@ from torch import cat, tensor
 from torch.nn import Module
 import torch.nn.functional as F
 
+import einx
 from einops.layers.torch import Rearrange
 from einops import rearrange, repeat
 
@@ -33,6 +34,7 @@ class LatentGenePool(Module):
         num_selected,
         tournament_size,
         num_elites = 1,             # exempt from genetic mutation and migration
+        mutation_prob = 0.25,
         mutation_std_dev = 0.1,
         num_islands = 1,
         migrate_genes_every = 10,   # every number of evolution step to do a migration between islands, if using multi-islands for increasing diversity
@@ -57,11 +59,19 @@ class LatentGenePool(Module):
         self.dim_gene = dim
         self.genes = nn.Parameter(l2norm(torch.randn(num_genes, dim)))
 
+        # islands
+
         self.split_islands = Rearrange('(i g) ... -> i g ...', i = num_islands)
         self.merge_islands = Rearrange('i g ... -> (i g) ...')
 
         self.num_elites = num_elites # todo - redo with affinity maturation algorithm from artificial immune system field
+
+        # mutation related
+
+        self.mutation_prob = mutation_prob
         self.mutation_std_dev = mutation_std_dev
+
+        # migration related
 
         assert 0. <= num_frac_migrate <= 1.
 
@@ -170,7 +180,13 @@ class LatentGenePool(Module):
             if has_elites:
                 elites, genes = genes[:, :1], genes[:, 1:]
 
-            genes.add_(torch.randn_like(genes) * self.mutation_std_dev)
+            noise = torch.randn_like(genes) * self.mutation_std_dev
+
+            should_mutate = torch.rand(genes.shape[0], device = device) <= self.mutation_prob
+
+            noise = einx.where('p, p g,', should_mutate, noise, 0.)
+
+            genes.add_(noise)
 
             if has_elites:
                 genes = torch.cat((elites, genes), dim = 1)

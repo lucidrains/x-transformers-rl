@@ -10,7 +10,7 @@ import numpy as np
 from tqdm import tqdm
 
 import torch
-from torch import nn, tensor, is_tensor, cat, stack
+from torch import nn, tensor, Tensor, is_tensor, cat, stack
 import torch.distributed as dist
 import torch.nn.functional as F
 from torch.nn import Module
@@ -117,9 +117,6 @@ def frac_gradient(t, frac = 1.):
 
 def log(t, eps = 1e-20):
     return t.clamp(min = eps).log()
-
-def entropy(prob):
-    return (-prob * log(prob)).sum()
 
 def softclamp(t, value):
     return (t / value).tanh() * value
