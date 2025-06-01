@@ -480,8 +480,10 @@ class WorldModelActorCritic(Module):
             mean, var = get_mean_var(advantages, mask = mask, distributed = self.normalize_advantages_use_batch_stats)
 
             if use_ema:
-                self.running_advantages_mean.lerp_(mean, momentum)
-                self.running_advantages_var.lerp_(var, momentum)
+                if self.training:
+                    self.running_advantages_mean.lerp_(mean, momentum)
+                    self.running_advantages_var.lerp_(var, momentum)
+
                 mean, var = (self.running_advantages_mean, self.running_advantages_var)
 
             advantages = normalize_with_mean_var(advantages, mean, var)
