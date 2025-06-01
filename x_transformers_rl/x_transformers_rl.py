@@ -91,6 +91,9 @@ def default(v, d):
 def first(arr):
     return arr[0]
 
+def is_zero_to_one(n):
+    return 0. <= n <= 1.
+
 def identity(t, *args, **kwargs):
     return t
 
@@ -100,10 +103,12 @@ def is_empty(t):
 def divisible_by(num, den):
     return (num % den) == 0
 
-def normalize(
+def normalize_with_mean_var(t, mean, var, eps = 1e-5):
+    return (t - mean) / var.clamp(min = eps).sqrt()
+
+def get_mean_var(
     t,
     mask = None,
-    eps = 1e-5,
     distributed = False
 ):
     device = t.device
@@ -131,7 +136,7 @@ def normalize(
         var = stats.var()
         centered = (t - mean)
 
-    return centered / var.clamp(min = eps).sqrt()
+    return mean, var
 
 def frac_gradient(t, frac = 1.):
     assert 0 <= frac <= 1.
@@ -199,7 +204,7 @@ def from_numpy(
 
 class ReluSquared(Module):
     def forward(self, x):
-        return x.relu().square()
+        return x.relu().square() * x.sign()
 
 # action related
 
@@ -321,7 +326,8 @@ class WorldModelActorCritic(Module):
         evolutionary = False,
         dim_latent_gene = None,
         normalize_advantages = True,
-        distributed_normalize = True
+        distributed_normalize = True,
+        norm_advantages_stats_momentum = 0.25 # 1. would mean not to use exponential smoothing
     ):
         super().__init__()
         self.transformer = transformer
@@ -404,12 +410,17 @@ class WorldModelActorCritic(Module):
 
         # advantage normalization
 
-        maybe_normalize = normalize if normalize_advantages else identity
+        self.normalize_advantages = normalize_advantages
+        self.normalize_advantages_use_batch_stats = distributed_normalize
 
-        if distributed_normalize:
-            maybe_normalize = partial(maybe_normalize, distributed = True)
+        assert is_zero_to_one(norm_advantages_stats_momentum)
+        norm_advantages_use_ema = norm_advantages_stats_momentum < 1.
 
-        self.maybe_normalize = maybe_normalize
+        self.norm_advantages_use_ema = norm_advantages_use_ema
+        self.norm_advantages_momentum = norm_advantages_stats_momentum
+
+        self.register_buffer('running_advantages_mean', tensor(0.), persistent = norm_advantages_use_ema)
+        self.register_buffer('running_advantages_var', tensor(1.), persistent = norm_advantages_use_ema)
 
         # ppo loss related
 
@@ -457,16 +468,31 @@ class WorldModelActorCritic(Module):
 
         scalar_old_values = self.critic_hl_gauss_loss(old_values)
 
-        # calculate clipped surrogate objective, classic PPO loss
+        # advantages
+
+        advantages = returns - scalar_old_values.detach()
+
+        # normalization of advantages
+
+        if self.normalize_advantages:
+            use_ema, momentum = (self.norm_advantages_use_ema, self.norm_advantages_momentum)
+
+            mean, var = get_mean_var(advantages, mask = mask, distributed = self.normalize_advantages_use_batch_stats)
+
+            if use_ema:
+                self.running_advantages_mean.lerp_(mean, momentum)
+                self.running_advantages_var.lerp_(var, momentum)
+                mean, var = (self.running_advantages_mean, self.running_advantages_var)
+
+            advantages = normalize_with_mean_var(advantages, mean, var)
+
+        # clipped surrogate objective
 
         ratios = (action_log_probs - old_log_probs).exp()
         clipped_ratios = ratios.clamp(1 - self.eps_clip, 1 + self.eps_clip)
 
-        advantages = returns - scalar_old_values.detach()
-        maybe_normed_advantages = self.maybe_normalize(advantages, mask = mask)
-
-        surr1 = multiply('b n ..., b n ->  b n ...', ratios, maybe_normed_advantages)
-        surr2 = multiply('b n ..., b n ->  b n ...', clipped_ratios, maybe_normed_advantages)
+        surr1 = multiply('b n ..., b n ->  b n ...', ratios, advantages)
+        surr2 = multiply('b n ..., b n ->  b n ...', clipped_ratios, advantages)
 
         actor_loss = - torch.min(surr1, surr2) - self.entropy_weight * entropy
 
@@ -619,7 +645,7 @@ class RSNorm(Module):
         mean = self.running_mean
         variance = self.running_variance
 
-        normed = (x - mean) / variance.clamp(min = self.eps).sqrt()
+        normed = normalize_with_mean_var(x, mean, variance)
 
         if not self.training:
             return normed

@@ -65,3 +65,14 @@ $ python train_lander.py
     url   = {https://api.semanticscholar.org/CorpusID:277313729}
 }
 ```
+
+```bibtex
+@article{Schulman2017ProximalPO,
+    title   = {Proximal Policy Optimization Algorithms},
+    author  = {John Schulman and Filip Wolski and Prafulla Dhariwal and Alec Radford and Oleg Klimov},
+    journal = {ArXiv},
+    year    = {2017},
+    volume  = {abs/1707.06347},
+    url     = {https://api.semanticscholar.org/CorpusID:28695052}
+}
+```
