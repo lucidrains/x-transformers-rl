@@ -87,8 +87,7 @@ class LatentGenePool(Module):
     def evolve_(
         self,
         fitnesses,
-        temperature = 1.5,
-        sync_seed = True
+        temperature = 1.5
     ):
         device, num_selected = fitnesses.device, self.num_selected
         assert fitnesses.ndim == 1 and fitnesses.shape[0] == self.num_genes

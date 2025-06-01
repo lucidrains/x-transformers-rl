@@ -10,7 +10,7 @@ import numpy as np
 from tqdm import tqdm
 
 import torch
-from torch import nn, tensor, Tensor, is_tensor, cat, stack
+from torch import nn, tensor, Tensor, is_tensor, cat, stack, zeros, ones
 import torch.distributed as dist
 import torch.nn.functional as F
 from torch.nn import Module
@@ -298,7 +298,7 @@ class WorldModelActorCritic(Module):
         self.transformer = transformer
         dim = transformer.attn_layers.dim
 
-        self.reward_embed = nn.Parameter(torch.ones(dim) * 1e-2)
+        self.reward_embed = nn.Parameter(ones(dim) * 1e-2)
 
         if not continuous_actions:
             self.action_embeds = SafeEmbedding(num_actions, dim)
@@ -495,7 +495,7 @@ class WorldModelActorCritic(Module):
         if exists(rewards):
             reward_embeds = multiply('..., d -> ... d', rewards, self.reward_embed)
 
-            maybe_dropout = self.reward_dropout(torch.ones((), device = device)) > 0.
+            maybe_dropout = self.reward_dropout(ones((), device = device)) > 0.
 
             sum_embeds = sum_embeds + reward_embeds * maybe_dropout.float()
 
@@ -571,8 +571,8 @@ class RSNorm(Module):
         self.eps = eps
 
         self.register_buffer('step', tensor(1))
-        self.register_buffer('running_mean', torch.zeros(dim))
-        self.register_buffer('running_variance', torch.ones(dim))
+        self.register_buffer('running_mean', zeros(dim))
+        self.register_buffer('running_variance', ones(dim))
 
     def forward(
         self,
@@ -1203,7 +1203,7 @@ class Learner(Module):
             if agent.evolutionary:
                 num_genes = agent.gene_pool.num_genes
 
-                fitnesses = torch.zeros((num_genes,), device = device) # keeping track of fitness of each gene
+                fitnesses = zeros((num_genes,), device = device) # keeping track of fitness of each gene
 
                 seed = maybe_sync_seed(device)
                 torch.manual_seed(seed)
@@ -1236,7 +1236,7 @@ class Learner(Module):
                 state = from_numpy(state).to(device)
 
                 if self.continuous_actions:
-                    prev_action = torch.zeros((self.num_actions,), device = device)
+                    prev_action = zeros((self.num_actions,), device = device)
                 else:
                     prev_action = tensor(-1).to(device)
 
