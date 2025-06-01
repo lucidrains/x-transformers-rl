@@ -103,17 +103,35 @@ def divisible_by(num, den):
 def normalize(
     t,
     mask = None,
-    eps = 1e-5
+    eps = 1e-5,
+    distributed = False
 ):
-    stats_t = t[mask] if exists(mask) else t
+    device = t.device
+    stats = t[mask] if exists(mask) else t # the statistics need to exclude padding
 
-    if is_empty(stats_t):
+    if is_empty(stats):
         return t
 
-    num = (t - stats_t.mean())
-    den = stats_t.var().clamp(min = eps).sqrt()
+    if distributed and is_distributed():
+        numel = tensor(stats.numel(), device = device)
+        dist.all_reduce(numel)
 
-    return num / den
+        summed_stats = stats.sum()
+        dist.all_reduce(summed_stats)
+
+        mean = summed_stats / numel
+        centered = (t - mean)
+
+        centered_squared_sum = centered[mask].square().sum()
+        dist.all_reduce(centered_squared_sum)
+
+        var = centered_squared_sum / numel # forget about correction for now
+    else:
+        mean = stats.mean()
+        var = stats.var()
+        centered = (t - mean)
+
+    return centered / var.clamp(min = eps).sqrt()
 
 def frac_gradient(t, frac = 1.):
     assert 0 <= frac <= 1.
@@ -296,7 +314,8 @@ class WorldModelActorCritic(Module):
         value_clip = 0.4,
         evolutionary = False,
         dim_latent_gene = None,
-        normalize_advantages = True
+        normalize_advantages = True,
+        distributed_normalize = True
     ):
         super().__init__()
         self.transformer = transformer
@@ -379,7 +398,12 @@ class WorldModelActorCritic(Module):
 
         # advantage normalization
 
-        self.maybe_normalize = normalize if normalize_advantages else identity
+        maybe_normalize = normalize if normalize_advantages else identity
+
+        if distributed_normalize:
+            maybe_normalize = partial(maybe_normalize, distributed = True)
+
+        self.maybe_normalize = maybe_normalize
 
         # ppo loss related
 

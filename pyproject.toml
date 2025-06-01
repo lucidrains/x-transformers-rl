@@ -1,6 +1,6 @@
 [project]
 name = "x-transformers-rl"
-version = "0.0.48"
+version = "0.0.49"
 description = "X-Transformer for RL"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
