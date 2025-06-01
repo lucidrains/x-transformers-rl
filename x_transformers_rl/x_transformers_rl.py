@@ -10,7 +10,7 @@ import numpy as np
 from tqdm import tqdm
 
 import torch
-from torch import nn, tensor, Tensor, is_tensor, cat, stack, zeros, ones
+from torch import nn, tensor, Tensor, is_tensor, cat, stack, zeros, ones, full, arange
 import torch.distributed as dist
 import torch.nn.functional as F
 from torch.nn import Module
@@ -902,7 +902,7 @@ class Agent(Module):
                 if self.evolutionary:
                     latent_gene = self.gene_pool[gene_ids]
 
-                seq = torch.arange(states.shape[1], device = self.device)
+                seq = arange(states.shape[1], device = self.device)
                 mask = less('n, b -> b n', seq, episode_lens)
 
                 prev_actions = pad_at_dim(
@@ -1140,14 +1140,24 @@ class Learner(Module):
         num_processes = self.accelerator.num_processes
         process_index = self.accelerator.process_index
 
-        genes_arange = torch.arange(self.agent.gene_pool.num_genes if exists(self.agent.gene_pool) else 1)
-        episodes_arange = torch.arange(num_episodes_per_update)
+        genes_arange = arange(self.agent.gene_pool.num_genes if exists(self.agent.gene_pool) else 1)
+        episodes_arange = arange(num_episodes_per_update)
 
         episode_genes = torch.cartesian_prod(episodes_arange, genes_arange)
 
+        num_rollouts = episode_genes.size(0)
+
         assert episode_genes.size(0) >= num_processes
 
-        sharded_episode_genes = episode_genes.chunk(num_processes, dim = 0)
+        # evenly group across processes, say 5 episode genes across 3 processes should be (2, 2, 1)
+
+        split_sizes = (
+            full((num_processes,), num_rollouts // num_processes) +
+            (arange(num_processes) < (num_rollouts % num_processes))
+        )
+
+        sharded_episode_genes = episode_genes.split(split_sizes.tolist(), dim = 0)
+
         self.episode_genes_for_process = sharded_episode_genes[process_index].tolist()
 
         # environment
