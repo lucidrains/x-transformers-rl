@@ -181,9 +181,10 @@ class LatentGenePool(Module):
 
             noise = torch.randn_like(genes) * self.mutation_std_dev
 
-            should_mutate = torch.rand(genes.shape[0], device = device) <= self.mutation_prob
+            if self.mutation_prob < 1.:
+                should_mutate = torch.rand(genes.shape[0], device = device) <= self.mutation_prob
 
-            noise = einx.where('p, p g,', should_mutate, noise, 0.)
+                noise = einx.where('p, p ...,', should_mutate, noise, 0.)
 
             genes.add_(noise)
 

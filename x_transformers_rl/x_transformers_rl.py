@@ -100,7 +100,11 @@ def is_empty(t):
 def divisible_by(num, den):
     return (num % den) == 0
 
-def normalize(t, mask = None, eps = 1e-5):
+def normalize(
+    t,
+    mask = None,
+    eps = 1e-5
+):
     stats_t = t[mask] if exists(mask) else t
 
     if is_empty(stats_t):
@@ -113,7 +117,7 @@ def normalize(t, mask = None, eps = 1e-5):
 
 def frac_gradient(t, frac = 1.):
     assert 0 <= frac <= 1.
-    return t.detach() * (1. - frac) + t * frac
+    return t.detach().lerp(t, frac)
 
 def log(t, eps = 1e-20):
     return t.clamp(min = eps).log()
