@@ -45,6 +45,7 @@ learner = Learner(
         depth = 4,
         attn_gate_values = True,
         add_value_residual = True,
+        ff_relu_squared = True,
         learned_value_residual_mix = True
     ),
     agent_kwargs = dict(

@@ -195,6 +195,12 @@ def from_numpy(
 
     return t
 
+# activations
+
+class ReluSquared(Module):
+    def forward(self, x):
+        return x.relu().square()
+
 # action related
 
 class SafeEmbedding(Module):
@@ -346,7 +352,7 @@ class WorldModelActorCritic(Module):
 
         self.to_pred = nn.Sequential(
             nn.Linear(dim * 2, dim),
-            nn.SiLU(),
+            ReluSquared(),
             Continuous.Linear(dim, state_dim_and_reward)
         )
 
@@ -367,7 +373,7 @@ class WorldModelActorCritic(Module):
 
         self.critic_head = nn.Sequential(
             nn.Linear(actor_critic_input_dim, dim * 2),
-            nn.SiLU(),
+            ReluSquared(),
             nn.Linear(dim * 2, critic_dim_pred)
         )
 
@@ -384,7 +390,7 @@ class WorldModelActorCritic(Module):
 
         self.action_head = nn.Sequential(
             nn.Linear(actor_critic_input_dim, dim * 2),
-            nn.SiLU(),
+            ReluSquared(),
             action_type_klass.Linear(dim * 2, num_actions)
         )
 
@@ -613,7 +619,7 @@ class RSNorm(Module):
         mean = self.running_mean
         variance = self.running_variance
 
-        normed = (x - mean) / variance.sqrt().clamp(min = self.eps)
+        normed = (x - mean) / variance.clamp(min = self.eps).sqrt()
 
         if not self.training:
             return normed
