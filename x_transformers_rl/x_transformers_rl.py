@@ -102,6 +102,9 @@ def identity(t, *args, **kwargs):
 def is_empty(t):
     return t.numel() == 0
 
+def l2norm(t):
+    return F.normalize(t, dim = -1, p = 2)
+
 def divisible_by(num, den):
     return (num % den) == 0
 
@@ -616,12 +619,13 @@ class WorldModelActorCritic(Module):
         if self.evolutionary:
             assert exists(latent_gene)
 
-            latent_embed = self.latent_to_embed(latent_gene)
+            latent_embed = l2norm(self.latent_to_embed(latent_gene))
 
             if latent_embed.ndim == 2:
                 seq_len = head_input.shape[1]
                 latent_embed = repeat(latent_embed, 'b d -> b n d', n = seq_len)
 
+            latent_embed = frac_gradient(latent_embed, 0.1)
             head_input = cat((head_input, latent_embed), dim = -1)
 
         # actor critic heads living on top of transformer - basically approaching online decision transformer except critic learn discounted returns
