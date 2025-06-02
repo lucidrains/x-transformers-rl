@@ -310,8 +310,8 @@ class WorldModelActorCritic(Module):
         state_dim,
         continuous_actions = False,
         squash_continuous = False,
-        frac_actor_head_gradient = 0.1,
-        frac_critic_head_gradient = 0.5,
+        frac_actor_head_gradient = 5e-2,
+        frac_critic_head_gradient = 5e-2,
         entropy_weight = 0.02,
         reward_dropout = 0.5, # dropout the prev reward conditioning half the time, so the world model can still operate without previous rewards
         eps_clip = 0.2,
