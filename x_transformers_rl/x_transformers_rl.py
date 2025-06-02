@@ -361,7 +361,7 @@ class WorldModelActorCritic(Module):
         self.to_pred = MLP(
             dim * 2,
             dim,
-            state_dim_and_reward,
+            state_dim_and_reward * 2,
             activation = nn.SiLU()
         )
 
