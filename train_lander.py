@@ -4,7 +4,7 @@ import gymnasium as gym
 from shutil import rmtree
 
 evolutionary = False
-continuous_actions = False
+continuous_actions = True
 
 env = gym.make(
     'LunarLander-v3',
@@ -52,7 +52,7 @@ learner = Learner(
     agent_kwargs = dict(
         actor_loss_weight = 0.5,
         actor_critic_world_model = dict(
-            frac_critic_head_gradient = 1e-1,
+            frac_critic_head_gradient = 1e-2 if continuous_actions else 5e-2,
             frac_actor_head_gradient = 1e-2 if continuous_actions else 5e-2,
         ),
     ),

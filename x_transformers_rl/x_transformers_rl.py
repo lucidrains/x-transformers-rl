@@ -571,7 +571,7 @@ class WorldModelActorCritic(Module):
                 reward_embeds = repeat(reward_embeds, 'n d -> b n d', b = batch)
 
             if not exists(reward_dropout):
-                reward_dropout = self.reward_dropout(ones((batch,), device = device)) > 0.
+                reward_dropout = self.reward_dropout(ones((batch,), device = device)) == 0.
 
             if not is_tensor(reward_dropout):
                 reward_dropout = tensor(reward_dropout, device = device)
@@ -579,7 +579,7 @@ class WorldModelActorCritic(Module):
             if reward_dropout.ndim == 0:
                 reward_dropout = repeat(reward_dropout, ' -> b', b = batch)
 
-            sum_embeds = sum_embeds + multiply('b ..., b -> b ...', reward_embeds, reward_dropout.float())
+            sum_embeds = sum_embeds + multiply('b ..., b -> b ...', reward_embeds, (~reward_dropout).float())
 
         embed, cache = self.transformer(
             state,
