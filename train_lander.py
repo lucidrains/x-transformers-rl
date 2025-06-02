@@ -3,7 +3,7 @@
 import gymnasium as gym
 from shutil import rmtree
 
-evolutionary = False
+evolutionary = True
 continuous_actions = True
 
 env = gym.make(
@@ -49,7 +49,8 @@ learner = Learner(
         learned_value_residual_mix = True
     ),
     agent_kwargs = dict(
-        actor_loss_weight = 0.5
+        actor_loss_weight = 0.5,
+        actor_critic_world_model_kwargs = dict(),
     ),
     frac_actor_critic_head_gradient = 1e-2 if continuous_actions else 5e-2
 )

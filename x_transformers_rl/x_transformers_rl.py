@@ -62,7 +62,7 @@ from x_transformers_rl.evolution import (
     LatentGenePool
 )
 
-from x_mlps_pytorch import MLP
+from x_mlps_pytorch.mlp import MLP, create_mlp
 
 # memory tuple
 
@@ -317,6 +317,7 @@ class WorldModelActorCritic(Module):
         value_clip = 0.4,
         evolutionary = False,
         dim_latent_gene = None,
+        latent_mapper_depth = 2,
         normalize_advantages = True,
         distributed_normalize = True,
         norm_advantages_stats_momentum = 0.25 # 1. would mean not to use exponential smoothing
@@ -363,7 +364,13 @@ class WorldModelActorCritic(Module):
 
         if evolutionary:
             assert exists(dim_latent_gene)
-            self.latent_to_embed = nn.Linear(dim_latent_gene, dim)
+
+            self.latent_to_embed = create_mlp(
+                dim_in = dim_latent_gene,
+                dim = dim,
+                depth = latent_mapper_depth,
+                activation = nn.SiLU()
+            )
 
         # actor critic
 
@@ -747,6 +754,7 @@ class Agent(Module):
             add_value_residual = True,
             learned_value_residual_mix = True
         ),
+        actor_critic_world_model: dict = dict(),
         dropout = 0.25,
         max_grad_norm = 0.5,
         frac_actor_critic_head_gradient = 0.5,
@@ -798,6 +806,7 @@ class Agent(Module):
                     **world_model
                 )
             ),
+            **actor_critic_world_model
         )
 
         self.frac_actor_critic_head_gradient = frac_actor_critic_head_gradient
