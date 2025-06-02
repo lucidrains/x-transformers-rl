@@ -636,6 +636,16 @@ class RSNorm(Module):
         self.register_buffer('running_mean', zeros(dim))
         self.register_buffer('running_variance', ones(dim))
 
+    def inverse_norm(
+        self,
+        normalized
+    ):
+        mean = self.running_mean
+        variance = self.running_variance
+        std = variance.clamp(min = self.eps).sqrt()
+
+        return normalized * std + mean
+
     def forward(
         self,
         x
