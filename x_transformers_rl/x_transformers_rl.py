@@ -310,7 +310,8 @@ class WorldModelActorCritic(Module):
         state_dim,
         continuous_actions = False,
         squash_continuous = False,
-        frac_actor_critic_head_gradient = 0.5,
+        frac_actor_head_gradient = 0.1,
+        frac_critic_head_gradient = 0.5,
         entropy_weight = 0.02,
         reward_dropout = 0.5, # dropout the prev reward conditioning half the time, so the world model can still operate without previous rewards
         eps_clip = 0.2,
@@ -410,7 +411,8 @@ class WorldModelActorCritic(Module):
         self.action_type_klass = action_type_klass
         self.squash_continuous = squash_continuous and continuous_actions
 
-        self.frac_actor_critic_head_gradient = frac_actor_critic_head_gradient
+        self.frac_actor_head_gradient = frac_actor_head_gradient
+        self.frac_critic_head_gradient = frac_critic_head_gradient
 
         # advantage normalization
 
@@ -591,13 +593,9 @@ class WorldModelActorCritic(Module):
             state_pred = Continuous(raw_state_pred).mean_variance
             dones = self.to_pred_done(embed_with_actions)
 
-        # actor critic heads living on top of transformer - basically approaching online decision transformer except critic learn discounted returns
-
-        embed = frac_gradient(embed, self.frac_actor_critic_head_gradient) # what fraction of the gradient to pass back to the world model from the actor / critic head
-
         # actor critic input
 
-        actor_critic_input = cat((embed, state_embed), dim = -1)
+        head_input = state_embed
 
         # maybe evolutionary
 
@@ -607,17 +605,23 @@ class WorldModelActorCritic(Module):
             latent_embed = self.latent_to_embed(latent_gene)
 
             if latent_embed.ndim == 2:
-                latent_embed = repeat(latent_embed, 'b d -> b n d', n = actor_critic_input.shape[1])
+                latent_embed = repeat(latent_embed, 'b d -> b n d', n = head_input.shape[1])
 
-            actor_critic_input = cat((actor_critic_input, latent_embed), dim = -1)
+            head_input = cat((actor_critic_input, latent_embed), dim = -1)
+
+        # actor critic heads living on top of transformer - basically approaching online decision transformer except critic learn discounted returns
+
+        actor_embed = frac_gradient(embed, self.frac_actor_head_gradient) # what fraction of the gradient to pass back to the world model from the actor / critic head
+
+        critic_embed = frac_gradient(embed, self.frac_critic_head_gradient)
 
         # actions
 
-        raw_actions = self.action_head(actor_critic_input)
+        raw_actions = self.action_head(cat((head_input, actor_embed), dim = -1))
 
         # values
 
-        values = self.critic_head(actor_critic_input)
+        values = self.critic_head(cat((head_input, critic_embed), dim = -1))
 
         return raw_actions, values, state_pred, dones, cache
 
@@ -1170,7 +1174,6 @@ class Learner(Module):
         epochs = 4,
         ema_decay = 0.9,
         save_every = 100,
-        frac_actor_critic_head_gradient = 0.5,
         accelerate_kwargs: dict = dict(),
         agent_kwargs: dict = dict()
     ):
@@ -1204,7 +1207,6 @@ class Learner(Module):
             eps_clip = eps_clip,
             value_clip = value_clip,
             ema_decay = ema_decay,
-            frac_actor_critic_head_gradient = frac_actor_critic_head_gradient,
             accelerator = self.accelerator,
             **agent_kwargs
         )
