@@ -62,6 +62,8 @@ from x_transformers_rl.evolution import (
     LatentGenePool
 )
 
+from x_mlps_pytorch import MLP
+
 # memory tuple
 
 Memory = namedtuple('Memory', [
@@ -356,10 +358,11 @@ class WorldModelActorCritic(Module):
 
         state_dim_and_reward = state_dim + 1
 
-        self.to_pred = nn.Sequential(
-            nn.Linear(dim * 2, dim),
-            nn.SiLU(),
-            Continuous.Linear(dim, state_dim_and_reward)
+        self.to_pred = MLP(
+            dim * 2,
+            dim,
+            state_dim_and_reward,
+            activation = nn.SiLU()
         )
 
         # evolutionary
@@ -377,10 +380,11 @@ class WorldModelActorCritic(Module):
         if evolutionary:
             actor_critic_input_dim += dim
 
-        self.critic_head = nn.Sequential(
-            nn.Linear(actor_critic_input_dim, dim * 2),
-            nn.SiLU(),
-            nn.Linear(dim * 2, critic_dim_pred)
+        self.critic_head = MLP(
+            actor_critic_input_dim,
+            dim * 2,
+            critic_dim_pred,
+            activation = nn.SiLU()
         )
 
         # https://arxiv.org/abs/2403.03950
@@ -394,10 +398,11 @@ class WorldModelActorCritic(Module):
 
         action_type_klass = Discrete if not continuous_actions else Continuous
 
-        self.action_head = nn.Sequential(
-            nn.Linear(actor_critic_input_dim, dim * 2),
-            nn.SiLU(),
-            action_type_klass.Linear(dim * 2, num_actions)
+        self.action_head = MLP(
+            actor_critic_input_dim,
+            dim * 2,
+            num_actions,
+            activation = nn.SiLU()
         )
 
         if continuous_actions and squash_continuous:
