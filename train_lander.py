@@ -51,7 +51,7 @@ learner = Learner(
     agent_kwargs = dict(
         actor_loss_weight = 0.5
     ),
-    frac_actor_critic_head_gradient = 1e-1
+    frac_actor_critic_head_gradient = 1e-2 if continuous_actions else 5e-2
 )
 
 if learner.accelerator.is_main_process:
