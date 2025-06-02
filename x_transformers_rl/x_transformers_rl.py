@@ -605,9 +605,10 @@ class WorldModelActorCritic(Module):
             latent_embed = self.latent_to_embed(latent_gene)
 
             if latent_embed.ndim == 2:
-                latent_embed = repeat(latent_embed, 'b d -> b n d', n = head_input.shape[1])
+                seq_len = head_input.shape[1]
+                latent_embed = repeat(latent_embed, 'b d -> b n d', n = seq_len)
 
-            head_input = cat((actor_critic_input, latent_embed), dim = -1)
+            head_input = cat((head_input, latent_embed), dim = -1)
 
         # actor critic heads living on top of transformer - basically approaching online decision transformer except critic learn discounted returns
 
