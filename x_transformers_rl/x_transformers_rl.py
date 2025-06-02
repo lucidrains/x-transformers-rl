@@ -358,7 +358,7 @@ class WorldModelActorCritic(Module):
 
         self.to_pred = nn.Sequential(
             nn.Linear(dim * 2, dim),
-            ReluSquared(),
+            nn.SiLU(),
             Continuous.Linear(dim, state_dim_and_reward)
         )
 
@@ -379,7 +379,7 @@ class WorldModelActorCritic(Module):
 
         self.critic_head = nn.Sequential(
             nn.Linear(actor_critic_input_dim, dim * 2),
-            ReluSquared(),
+            nn.SiLU(),
             nn.Linear(dim * 2, critic_dim_pred)
         )
 
@@ -396,7 +396,7 @@ class WorldModelActorCritic(Module):
 
         self.action_head = nn.Sequential(
             nn.Linear(actor_critic_input_dim, dim * 2),
-            ReluSquared(),
+            nn.SiLU(),
             action_type_klass.Linear(dim * 2, num_actions)
         )
 
