@@ -235,14 +235,9 @@ class Discrete:
         self.probs = raw_actions.softmax(dim = -1)
         self.dist = Categorical(self.probs)
 
-    @classmethod
-    def Linear(
-        self,
-        dim,
-        num_actions,
-        bias = True
-    ) -> nn.Linear:
-        return nn.Linear(dim, num_actions, bias = bias)
+    @staticmethod
+    def dim_out(num_actions):
+        return num_actions
 
     def sample(self):
         return self.dist.sample()
@@ -275,16 +270,11 @@ class Continuous:
         std = variance.clamp(min = eps).sqrt()
         self.dist = Normal(mean, std)
 
-        self.squash = squash
+        self.squash = squash    
 
-    @classmethod
-    def Linear(
-        self,
-        dim,
-        num_actions,
-        bias = True
-    ) -> Module:
-        return nn.Linear(dim, num_actions * 2, bias = bias)
+    @staticmethod
+    def dim_out(num_actions):
+        return num_actions * 2
 
     def sample(self):
         sampled = self.dist.sample()
@@ -358,10 +348,12 @@ class WorldModelActorCritic(Module):
 
         state_dim_and_reward = state_dim + 1
 
+        to_pred_type_klass = Continuous # will setup classic discrete autoregressive w/ vqvae eventually
+
         self.to_pred = MLP(
             dim * 2,
             dim,
-            state_dim_and_reward * 2,
+            to_pred_type_klass.dim_out(state_dim_and_reward),
             activation = nn.SiLU()
         )
 
@@ -401,7 +393,7 @@ class WorldModelActorCritic(Module):
         self.action_head = MLP(
             actor_critic_input_dim,
             dim * 2,
-            num_actions,
+            action_type_klass.dim_out(num_actions),
             activation = nn.SiLU()
         )
 
