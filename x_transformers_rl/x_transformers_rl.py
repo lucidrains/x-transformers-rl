@@ -287,13 +287,13 @@ class Continuous:
 
         return sampled.tanh()
 
-    def log_prob(self, value):
+    def log_prob(self, value, eps = 1e-5):
         log_prob = self.dist.log_prob(value)
 
         if not self.squash:
             return log_prob
 
-        return log_prob - log(1. - value.pow(2))
+        return log_prob - log(1. - value.pow(2), eps = eps)
 
     def entropy(self):
 
@@ -335,7 +335,10 @@ class WorldModelActorCritic(Module):
         if not continuous_actions:
             self.action_embeds = SafeEmbedding(num_actions, dim)
         else:
-            self.action_embeds = nn.Linear(num_actions, dim)
+            self.action_embeds = nn.Sequential(
+                MLP(num_actions, dim * 2, dim, activation = nn.SiLU()),
+                nn.RMSNorm(dim)
+            )
 
         self.reward_dropout = nn.Dropout(reward_dropout)
 
@@ -778,9 +781,8 @@ class Agent(Module):
             learned_value_residual_mix = True
         ),
         actor_critic_world_model: dict = dict(),
-        dropout = 0.25,
+        dropout = 0.,
         max_grad_norm = 0.5,
-        frac_actor_critic_head_gradient = 0.5,
         ema_kwargs: dict = dict(
             update_model_with_ema_every = 1250
         ),
@@ -831,8 +833,6 @@ class Agent(Module):
             ),
             **actor_critic_world_model
         )
-
-        self.frac_actor_critic_head_gradient = frac_actor_critic_head_gradient
 
         # action related
 
