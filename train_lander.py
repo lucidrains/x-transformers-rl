@@ -3,7 +3,7 @@
 import gymnasium as gym
 from shutil import rmtree
 
-evolutionary = True
+evolutionary = False
 continuous_actions = True
 
 env = gym.make(
@@ -29,8 +29,8 @@ learner = Learner(
     continuous_actions_clamp = continuous_actions_clamp,
     squash_continuous = True,
     evolutionary = evolutionary,
-    batch_size = 8,
-    num_episodes_per_update = 64,
+    batch_size = 4,
+    num_episodes_per_update = 32,
     evolve_every = 5,
     evolve_after_step = 10,
     latent_gene_pool = dict(

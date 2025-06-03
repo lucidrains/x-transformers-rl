@@ -1195,7 +1195,7 @@ class Learner(Module):
         beta_s = .01,
         regen_reg_rate = 1e-4,
         cautious_factor = 0.1,
-        epochs = 4,
+        epochs = 3,
         ema_decay = 0.9,
         save_every = 100,
         accelerate_kwargs: dict = dict(),
