@@ -256,15 +256,12 @@ class Continuous:
         self,
         raw_actions: Tensor,
         squash = False,
-        eps = 1e-5,
-        log_var_clamp_value = 3.
+        eps = 1e-5
     ):
         raw_actions = rearrange(raw_actions, '... (d muvar) -> ... d muvar', muvar = 2)
         self.raw_actions = raw_actions
 
         mean, log_variance = raw_actions.unbind(dim = -1)
-
-        log_variance = softclamp(log_variance, log_var_clamp_value)
 
         variance = log_variance.exp()
 
@@ -287,7 +284,7 @@ class Continuous:
 
         return sampled.tanh()
 
-    def log_prob(self, value, eps = 1e-5):
+    def log_prob(self, value, eps = 1e-3):
         log_prob = self.dist.log_prob(value)
 
         if not self.squash:
@@ -344,7 +341,10 @@ class WorldModelActorCritic(Module):
 
         dim = transformer.attn_layers.dim
 
-        self.to_state_embed = nn.Linear(state_dim, dim)
+        self.to_state_embed = nn.Sequential(
+            MLP(state_dim, dim * 2, dim, activation = nn.SiLU()),
+            nn.RMSNorm(dim),
+        )
 
         # world modeling related
 
