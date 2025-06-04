@@ -4,7 +4,7 @@ import gymnasium as gym
 from shutil import rmtree
 
 evolutionary = False
-continuous_actions = True
+continuous_actions = False
 
 env = gym.make(
     'LunarLander-v3',
@@ -29,8 +29,8 @@ learner = Learner(
     continuous_actions_clamp = continuous_actions_clamp,
     squash_continuous = True,
     evolutionary = evolutionary,
-    batch_size = 4,
-    num_episodes_per_update = 32,
+    batch_size = 8,
+    num_episodes_per_update = 64,
     evolve_every = 5,
     evolve_after_step = 10,
     latent_gene_pool = dict(

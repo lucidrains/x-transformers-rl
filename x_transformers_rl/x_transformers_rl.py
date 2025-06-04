@@ -33,6 +33,7 @@ b - batch
 n - sequence
 d - dimension
 a - actions
+sr - state rewards
 """
 
 from ema_pytorch import EMA
@@ -308,6 +309,7 @@ class WorldModelActorCritic(Module):
         critic_dim_pred,
         critic_min_max_value: tuple[float, float],
         state_dim,
+        state_pred_num_bins = 50,
         continuous_actions = False,
         squash_continuous = False,
         frac_actor_head_gradient = 5e-2,
@@ -356,13 +358,21 @@ class WorldModelActorCritic(Module):
 
         state_dim_and_reward = state_dim + 1
 
-        to_pred_type_klass = Continuous # will setup classic discrete autoregressive w/ vqvae eventually
+        self.state_hl_gauss_loss = HLGaussLoss(
+            min_value = -5., # since state isnormalized, this should be sufficient
+            max_value = 5.,
+            num_bins = state_pred_num_bins,
+            clamp_to_range = True
+        )
 
-        self.to_pred = MLP(
-            dim * 2,
-            dim,
-            to_pred_type_klass.dim_out(state_dim_and_reward),
-            activation = nn.SiLU()
+        self.to_pred = nn.Sequential(
+            MLP(
+                dim * 2,
+                dim,
+                state_dim_and_reward * state_pred_num_bins,
+                activation = nn.SiLU()
+            ),
+            Rearrange('... (states_rewards bins) -> ... states_rewards bins', bins = state_pred_num_bins)
         )
 
         # evolutionary
@@ -454,8 +464,14 @@ class WorldModelActorCritic(Module):
         pred,
         real
     ):
-        pred_mean, pred_var = pred[..., :-1, :] # todo: fix truncation scenario
-        return F.gaussian_nll_loss(pred_mean, real[:, 1:], pred_var, reduction = 'none')
+        batch = pred.shape[0]
+
+        pred = rearrange(pred, 'b n sr l -> (b sr) n l')
+        real = rearrange(real, 'b n sr -> (b sr) n')
+
+        loss = self.state_hl_gauss_loss(pred, real, reduction = 'none')
+
+        return reduce(loss, '(b sr) n -> b n', 'sum', b = batch)
 
     def compute_done_loss(
         self,
@@ -609,8 +625,7 @@ class WorldModelActorCritic(Module):
         dones = None
 
         if exists(embed_with_actions):
-            raw_state_pred = self.to_pred(embed_with_actions)
-            state_pred = Continuous(raw_state_pred).mean_variance
+            state_pred = self.to_pred(embed_with_actions)
             dones = self.to_pred_done(embed_with_actions)
 
         # actor critic input
@@ -1043,7 +1058,7 @@ class Agent(Module):
                     states_with_rewards
                 )
 
-                world_model_loss = world_model_loss[mask[:, :-1]]
+                world_model_loss = world_model_loss[mask]
 
                 # predicting termination head
 
