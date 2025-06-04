@@ -466,8 +466,8 @@ class WorldModelActorCritic(Module):
     ):
         batch = pred.shape[0]
 
-        pred = rearrange(pred, 'b n sr l -> (b sr) n l')
-        real = rearrange(real, 'b n sr -> (b sr) n')
+        pred = rearrange(pred[:, :-1], 'b n sr l -> (b sr) n l')
+        real = rearrange(real[:, 1:], 'b n sr -> (b sr) n')
 
         loss = self.state_hl_gauss_loss(pred, real, reduction = 'none')
 
@@ -478,6 +478,8 @@ class WorldModelActorCritic(Module):
         done_pred,
         dones
     ):
+        done_pred = done_pred[:, :-1]
+        dones = dones[:, 1:]
         return F.binary_cross_entropy(done_pred, dones.float(), reduction = 'none')
 
     def compute_actor_loss(
@@ -1053,17 +1055,19 @@ class Agent(Module):
 
                 # autoregressive loss for transformer world modeling - there's nothing better atm, even if deficient
 
+                ar_loss_mask = mask[:, :-1]
+
                 world_model_loss = model.compute_autoregressive_loss(
                     states_with_rewards_pred,
                     states_with_rewards
                 )
 
-                world_model_loss = world_model_loss[mask]
+                world_model_loss = world_model_loss[ar_loss_mask]
 
                 # predicting termination head
 
                 pred_done_loss = model.compute_done_loss(done_pred, dones)
-                pred_done_loss = pred_done_loss[mask]
+                pred_done_loss = pred_done_loss[ar_loss_mask]
 
                 # update actor and critic
 
