@@ -30,7 +30,7 @@ dependencies = [
     'einx>=0.3.0',
     'einops>=0.8.0',
     'ema-pytorch',
-    'hl-gauss-pytorch',
+    'hl-gauss-pytorch>=0.1.22',
     'torch>=2.4',
     'tqdm',
     'vector-quantize-pytorch>=1.22.6',
