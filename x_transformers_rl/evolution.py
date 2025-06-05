@@ -38,7 +38,8 @@ class LatentGenePool(Module):
         mutation_std_dev = 0.1,
         num_islands = 1,
         migrate_genes_every = 10,   # every number of evolution step to do a migration between islands, if using multi-islands for increasing diversity
-        num_frac_migrate = 0.1      # migrate 10 percent of the bottom population
+        num_frac_migrate = 0.1,     # migrate 10 percent of the bottom population
+        fitness_var_threshold = 0.  # the threshold of variance of the fitness scores until which breeding of genes can occur
     ):
         super().__init__()
         assert num_islands >= 1
@@ -71,6 +72,10 @@ class LatentGenePool(Module):
         self.mutation_prob = mutation_prob
         self.mutation_std_dev = mutation_std_dev
 
+        # control for when to take a genetic algorithm step
+
+        self.fitness_var_threshold = fitness_var_threshold
+
         # migration related
 
         assert 0. <= num_frac_migrate <= 1.
@@ -91,6 +96,11 @@ class LatentGenePool(Module):
     ):
         device, num_selected = fitnesses.device, self.num_selected
         assert fitnesses.ndim == 1 and fitnesses.shape[0] == self.num_genes
+
+        fitness_var = fitnesses.var().item()
+
+        if fitness_var <= self.fitness_var_threshold:
+            return
 
         if is_distributed():
             seed = maybe_sync_seed(device)
