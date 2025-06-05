@@ -1444,8 +1444,6 @@ class Learner(Module):
                     normed_state = rearrange(normed_state, 'd -> 1 1 d')
                     prev_action = rearrange(prev_action, '... -> 1 1 ...')
 
-                    state_pred_contains_sos = not exists(world_model_cache)
-
                     raw_actions, values, state_pred, _, world_model_cache = model.forward_eval(
                         normed_state,
                         rewards = normed_reward,
@@ -1458,11 +1456,9 @@ class Learner(Module):
                     raw_actions = rearrange(raw_actions, '1 1 d -> d')
                     values = rearrange(values, '1 1 d -> d')
 
-                    if state_pred_contains_sos:
-                        state_pred = state_pred[:, 1:]
-
+                    state_pred = state_pred[:, -1] # last token, in the case of sos token added
                     state_pred_entropy = entropy(state_pred).mean(dim = -1)
-                    state_pred_entropy = rearrange(state_pred_entropy, '1 1 ->')
+                    state_pred_entropy = rearrange(state_pred_entropy, '1 ->')
 
                     return model.action_type_klass(raw_actions), values, state_pred_entropy
 
