@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from math import ceil
 from pathlib import Path
 from copy import deepcopy
@@ -478,8 +480,6 @@ class WorldModelActorCritic(Module):
         done_pred,
         dones
     ):
-        done_pred = done_pred[:, :-1]
-        dones = dones[:, 1:]
         return F.binary_cross_entropy(done_pred, dones.float(), reduction = 'none')
 
     def compute_actor_loss(
@@ -1067,7 +1067,7 @@ class Agent(Module):
                 # predicting termination head
 
                 pred_done_loss = model.compute_done_loss(done_pred, dones)
-                pred_done_loss = pred_done_loss[ar_loss_mask]
+                pred_done_loss = pred_done_loss[mask]
 
                 # update actor and critic
 
