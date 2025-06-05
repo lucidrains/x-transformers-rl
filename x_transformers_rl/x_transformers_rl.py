@@ -213,12 +213,6 @@ def from_numpy(
 
     return t
 
-# activations
-
-class ReluSquared(Module):
-    def forward(self, x):
-        return x.relu().square() * x.sign()
-
 # action related
 
 class SafeEmbedding(Module):
