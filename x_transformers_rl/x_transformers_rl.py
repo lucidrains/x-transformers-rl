@@ -153,6 +153,10 @@ def frac_gradient(t, frac = 1.):
 def log(t, eps = 1e-20):
     return t.clamp(min = eps).log()
 
+def entropy(logits, eps = 1e-20):
+    prob = logits.softmax(dim = -1)
+    return - (log(prob, eps) * prob).sum(dim = -1)
+
 def softclamp(t, value):
     return (t / value).tanh() * value
 
@@ -361,11 +365,13 @@ class WorldModelActorCritic(Module):
         state_dim_and_reward = state_dim + 1
 
         self.state_hl_gauss_loss = HLGaussLoss(
-            min_value = -5., # since state isnormalized, this should be sufficient
+            min_value = -5., # since state is normalized, this should be sufficient
             max_value = 5.,
             num_bins = state_pred_num_bins,
             clamp_to_range = True
         )
+
+        self.world_model_sos_token = nn.Parameter(torch.zeros(dim))
 
         self.to_pred = nn.Sequential(
             MLP(
@@ -469,7 +475,7 @@ class WorldModelActorCritic(Module):
         batch = pred.shape[0]
 
         pred = rearrange(pred[:, :-1], 'b n sr l -> (b sr) n l')
-        real = rearrange(real[:, 1:], 'b n sr -> (b sr) n')
+        real = rearrange(real, 'b n sr -> (b sr) n')
 
         loss = self.state_hl_gauss_loss(pred, real, reduction = 'none')
 
@@ -480,6 +486,7 @@ class WorldModelActorCritic(Module):
         done_pred,
         dones
     ):
+        dones = F.pad(dones, (1, 0), value = False)
         return F.binary_cross_entropy(done_pred, dones.float(), reduction = 'none')
 
     def compute_actor_loss(
@@ -574,6 +581,7 @@ class WorldModelActorCritic(Module):
         reward_dropout: bool | Tensor | None = None,
         next_actions = None,
         latent_gene = None,
+        cache = None,
         **kwargs
     ):
         batch, device = state.shape[0], self.device
@@ -605,11 +613,23 @@ class WorldModelActorCritic(Module):
 
             sum_embeds = sum_embeds + multiply('b ..., b -> b ...', reward_embeds, (~reward_dropout).float())
 
+        # if not inferencing with cache, prepend the sos token
+
+        inference_with_cache = exists(cache)
+
+        prepend_embeds = None
+        if not inference_with_cache:
+            prepend_embeds = repeat(self.world_model_sos_token, 'd -> b 1 d', b = batch)
+
+        # attend
+
         embed, cache = self.transformer(
             state,
             *args,
             **kwargs,
+            cache = cache,
             sum_embeds = sum_embeds,
+            prepend_embeds = prepend_embeds,
             return_embeddings = True,
             return_intermediates = True
         )
@@ -618,6 +638,9 @@ class WorldModelActorCritic(Module):
 
         embed_with_actions = None
         if exists(next_actions):
+            assert not inference_with_cache
+
+            next_actions = pad_at_dim(next_actions, (1, 0), value = 0)
             next_action_embeds = self.action_embeds(next_actions)
             embed_with_actions = cat((embed, next_action_embeds), dim = -1)
 
@@ -650,9 +673,15 @@ class WorldModelActorCritic(Module):
 
         # actor critic heads living on top of transformer - basically approaching online decision transformer except critic learn discounted returns
 
-        actor_embed = frac_gradient(embed, self.frac_actor_head_gradient) # what fraction of the gradient to pass back to the world model from the actor / critic head
+        embed_for_actor_critic = embed
 
-        critic_embed = frac_gradient(embed, self.frac_critic_head_gradient)
+        if not inference_with_cache:
+            # remove sos token if needed
+            embed_for_actor_critic = embed_for_actor_critic[:, 1:]
+
+        actor_embed = frac_gradient(embed_for_actor_critic, self.frac_actor_head_gradient) # what fraction of the gradient to pass back to the world model from the actor / critic head
+
+        critic_embed = frac_gradient(embed_for_actor_critic, self.frac_critic_head_gradient)
 
         # actions
 
@@ -1055,19 +1084,19 @@ class Agent(Module):
 
                 # autoregressive loss for transformer world modeling - there's nothing better atm, even if deficient
 
-                ar_loss_mask = mask[:, :-1]
-
                 world_model_loss = model.compute_autoregressive_loss(
                     states_with_rewards_pred,
                     states_with_rewards
                 )
 
-                world_model_loss = world_model_loss[ar_loss_mask]
+                world_model_loss = world_model_loss[mask]
 
                 # predicting termination head
 
+                done_pred_mask = F.pad(mask, (1, 0), value = True)
+
                 pred_done_loss = model.compute_done_loss(done_pred, dones)
-                pred_done_loss = pred_done_loss[mask]
+                pred_done_loss = pred_done_loss[done_pred_mask]
 
                 # update actor and critic
 
