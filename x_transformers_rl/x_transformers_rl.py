@@ -7,6 +7,7 @@ from pathlib import Path
 from copy import deepcopy
 from functools import partial, wraps
 from collections import deque, namedtuple
+from random import random
 
 import numpy as np
 from tqdm import tqdm
@@ -371,7 +372,8 @@ class WorldModelActorCritic(Module):
             clamp_to_range = True
         )
 
-        self.world_model_sos_token = nn.Parameter(torch.zeros(dim))
+        self.world_model_sos_token = nn.Parameter(torch.randn(dim) * 1e-2)
+        self.null_next_action_token = nn.Parameter(torch.randn(dim) * 1e-2)
 
         self.to_pred = nn.Sequential(
             MLP(
@@ -637,22 +639,25 @@ class WorldModelActorCritic(Module):
         # if `next_actions` from agent passed in, use it to predict the next state + truncated / terminated signal
 
         embed_with_actions = None
+
+        if random() < 0.5:
+            next_actions = None # random dropout of next actions
+
         if exists(next_actions):
-            assert not inference_with_cache
 
             next_actions = pad_at_dim(next_actions, (1, 0), value = 0, dim = 1)
 
             next_action_embeds = self.action_embeds(next_actions)
-            embed_with_actions = cat((embed, next_action_embeds), dim = -1)
+        else:
+            seq_len = embed.shape[1]
+            next_action_embeds = repeat(self.null_next_action_token, 'd -> b n d', b = batch, n = seq_len)
+
+        embed_with_actions = cat((embed, next_action_embeds), dim = -1)
 
         # predicting state and dones, based on agent's action
 
-        state_pred = None
-        dones = None
-
-        if exists(embed_with_actions):
-            state_pred = self.to_pred(embed_with_actions)
-            dones = self.to_pred_done(embed_with_actions)
+        state_pred = self.to_pred(embed_with_actions)
+        dones = self.to_pred_done(embed_with_actions)
 
         # actor critic input
 
@@ -1231,6 +1236,7 @@ class Learner(Module):
         evolve_every = 10,
         evolve_after_step = 20,
         reward_dropout_prob = 0.5,
+        curiosity_reward_weight = 1e-2,
         latent_gene_pool: dict | None = None,
         max_timesteps = 500,
         batch_size = 8,
@@ -1323,6 +1329,10 @@ class Learner(Module):
 
         self.reward_dropout_prob = reward_dropout_prob
 
+        # weight for curiosity reward, based on entropy of state prediction
+
+        self.curiosity_reward_weight = curiosity_reward_weight
+
         # saving agent
 
         self.save_every = save_every
@@ -1342,6 +1352,7 @@ class Learner(Module):
         seed = None,
         max_timesteps = None
     ):
+        has_curiosity_reward = self.curiosity_reward_weight > 0.
         max_timesteps = default(max_timesteps, self.max_timesteps)
 
         agent, device, num_episodes_per_update, is_main = self.agent, self.device, self.num_episodes_per_update, self.accelerator.is_main_process
@@ -1433,7 +1444,9 @@ class Learner(Module):
                     normed_state = rearrange(normed_state, 'd -> 1 1 d')
                     prev_action = rearrange(prev_action, '... -> 1 1 ...')
 
-                    raw_actions, values, _, _, world_model_cache = model.forward_eval(
+                    state_pred_contains_sos = not exists(world_model_cache)
+
+                    raw_actions, values, state_pred, _, world_model_cache = model.forward_eval(
                         normed_state,
                         rewards = normed_reward,
                         reward_dropout = reward_dropout,
@@ -1445,13 +1458,19 @@ class Learner(Module):
                     raw_actions = rearrange(raw_actions, '1 1 d -> d')
                     values = rearrange(values, '1 1 d -> d')
 
-                    return model.action_type_klass(raw_actions), values
+                    if state_pred_contains_sos:
+                        state_pred = state_pred[:, 1:]
+
+                    state_pred_entropy = entropy(state_pred).mean(dim = -1)
+                    state_pred_entropy = rearrange(state_pred_entropy, '1 1 ->')
+
+                    return model.action_type_klass(raw_actions), values, state_pred_entropy
 
                 cumulative_rewards = 0.
 
                 for timestep in range(max_timesteps):
 
-                    dist, value = state_to_pred_action_and_value(state, prev_action, prev_reward, latent_gene)
+                    dist, value, state_pred_entropy = state_to_pred_action_and_value(state, prev_action, prev_reward, latent_gene)
 
                     action = dist.sample()
                     action_log_prob = dist.log_prob(action)
@@ -1475,6 +1494,10 @@ class Learner(Module):
                     next_state = from_numpy(next_state).to(device)
 
                     reward = float(reward)
+
+                    if has_curiosity_reward:
+                        reward += state_pred_entropy.item() * self.curiosity_reward_weight
+
                     cumulative_rewards += reward
 
                     prev_action = action
