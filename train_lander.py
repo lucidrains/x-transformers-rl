@@ -55,6 +55,7 @@ learner = Learner(
             frac_critic_head_gradient = 5e-2,
             frac_actor_head_gradient = 5e-2,
         ),
+        world_model_embed_linear_schedule = (5., 20.) # world model incorporated from steps 5 to 20
     ),
 )
 

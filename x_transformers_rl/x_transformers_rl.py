@@ -215,6 +215,19 @@ def from_numpy(
 
     return t
 
+# schedule related
+
+def clamp(num, min_val, max_val):
+    return min(max(num, min_val), max_val)
+
+def linear_schedule(min_step, max_step, max_val):
+    slope = max_val / (max_step - min_step)
+
+    def calc_value(step):
+        return clamp(slope * (step - min_step), 0., max_val)
+
+    return calc_value
+
 # action related
 
 class SafeEmbedding(Module):
@@ -583,6 +596,7 @@ class WorldModelActorCritic(Module):
         reward_dropout: bool | Tensor | None = None,
         next_actions = None,
         latent_gene = None,
+        world_model_embed_mult = 1.,
         cache = None,
         **kwargs
     ):
@@ -678,16 +692,18 @@ class WorldModelActorCritic(Module):
             head_input = cat((head_input, latent_embed), dim = -1)
 
         # actor critic heads living on top of transformer - basically approaching online decision transformer except critic learn discounted returns
+        # wm stands for 'world model'
 
-        embed_for_actor_critic = embed
+        wm_sched_scale = world_model_embed_mult
+        embed_for_actor_critic = embed * wm_sched_scale
 
         if not inference_with_cache:
             # remove sos token if needed
             embed_for_actor_critic = embed_for_actor_critic[:, 1:]
 
-        actor_embed = frac_gradient(embed_for_actor_critic, self.frac_actor_head_gradient) # what fraction of the gradient to pass back to the world model from the actor / critic head
+        actor_embed = frac_gradient(embed_for_actor_critic, self.frac_actor_head_gradient * wm_sched_scale) # what fraction of the gradient to pass back to the world model from the actor / critic head
 
-        critic_embed = frac_gradient(embed_for_actor_critic, self.frac_critic_head_gradient)
+        critic_embed = frac_gradient(embed_for_actor_critic, self.frac_critic_head_gradient * wm_sched_scale)
 
         # actions
 
@@ -842,7 +858,12 @@ class Agent(Module):
         accelerator: Accelerator | None = None,
         actor_loss_weight = 1.,
         critic_loss_weight = 1.,
-        autoregressive_loss_weight = 1.
+        autoregressive_loss_weight = 1.,
+        world_model_embed_linear_schedule: (
+            float |                 # 1. fully at this step
+            tuple[float, float] |   # min step to this max step from 0. to 1.
+            None
+        ) = None
     ):
         super().__init__()
 
@@ -929,6 +950,18 @@ class Agent(Module):
         self.register_buffer('step', tensor(0))
         self.to(accelerator.device)
 
+        # slowly titrate in the world model embed into actor / critic, as initially it won't provide much value
+
+        self.world_model_sched = None
+
+        if exists(world_model_embed_linear_schedule):
+            embed_mult_range = world_model_embed_linear_schedule
+
+            if isinstance(embed_mult_range, float):
+                embed_mult_range = (0., embed_mult_range)
+
+            self.world_model_sched = linear_schedule(*embed_mult_range, 1.)
+
         # loss weights
 
         self.actor_loss_weight = actor_loss_weight
@@ -938,6 +971,13 @@ class Agent(Module):
     @property
     def device(self):
         return self.step.device
+
+    @property
+    def world_model_embed_mult(self):
+        if not exists(self.world_model_sched):
+            return 1.
+
+        return self.world_model_sched(self.step.item())
 
     def save(self):
         if not self.accelerator.is_main_process:
@@ -1085,7 +1125,8 @@ class Agent(Module):
                     actions = prev_actions,
                     latent_gene = latent_gene,
                     next_actions = actions, # prediction of the next state needs to be conditioned on the agent's chosen action on that state, and will make the world model interactable
-                    mask = mask
+                    mask = mask,
+                    world_model_embed_mult = self.world_model_embed_mult
                 )
 
                 # autoregressive loss for transformer world modeling - there's nothing better atm, even if deficient
@@ -1454,7 +1495,8 @@ class Learner(Module):
                         reward_dropout = reward_dropout,
                         latent_gene = latent_gene,
                         cache = world_model_cache,
-                        actions = prev_action
+                        actions = prev_action,
+                        world_model_embed_mult = agent.world_model_embed_mult
                     )
 
                     raw_actions = rearrange(raw_actions, '1 1 d -> d')
