@@ -1281,7 +1281,7 @@ class Learner(Module):
         evolve_every = 10,
         evolve_after_step = 20,
         reward_dropout_prob = 0.5,
-        curiosity_reward_weight = 1e-2,
+        curiosity_reward_weight = 0.,
         latent_gene_pool: dict | None = None,
         max_timesteps = 500,
         batch_size = 8,
