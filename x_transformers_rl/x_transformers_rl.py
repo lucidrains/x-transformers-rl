@@ -326,7 +326,9 @@ class WorldModelActorCritic(Module):
         latent_mapper_depth = 2,
         normalize_advantages = True,
         distributed_normalize = True,
-        norm_advantages_stats_momentum = 0.25 # 1. would mean not to use exponential smoothing
+        norm_advantages_stats_momentum = 0.25, # 1. would mean not to use exponential smoothing
+        actor_ff_depth = 1,
+        critic_ff_depth= 2, # certain paper say critic needs to be larger than actor, although in this setting where both draws and slowly shapes the world model, not sure
     ):
         super().__init__()
         self.transformer = transformer
@@ -402,11 +404,12 @@ class WorldModelActorCritic(Module):
         if evolutionary:
             actor_critic_input_dim += dim
 
-        self.critic_head = MLP(
-            actor_critic_input_dim,
-            dim * 2,
-            critic_dim_pred,
-            activation = nn.SiLU()
+        self.critic_head = nFeedforwards(
+            dim,
+            depth = critic_ff_depth,
+            dim_in = actor_critic_input_dim,
+            dim_out = critic_dim_pred,
+            input_preserve_magnitude = True
         )
 
         # https://arxiv.org/abs/2403.03950
@@ -422,7 +425,7 @@ class WorldModelActorCritic(Module):
 
         self.action_head = nFeedforwards(
             dim,
-            depth = 1,
+            depth = actor_ff_depth,
             dim_in = actor_critic_input_dim,
             dim_out = action_type_klass.dim_out(num_actions),
             input_preserve_magnitude = True
