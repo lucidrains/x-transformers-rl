@@ -87,3 +87,14 @@ $ python train_lander.py
     url    = {https://api.semanticscholar.org/CorpusID:268253088}
 }
 ```
+
+```bibtex
+@article{Lee2025HypersphericalNF,
+    title   = {Hyperspherical Normalization for Scalable Deep Reinforcement Learning},
+    author  = {Hojoon Lee and Youngdo Lee and Takuma Seno and Donghu Kim and Peter Stone and Jaegul Choo},
+    journal = {ArXiv},
+    year    = {2025},
+    volume  = {abs/2502.15280},
+    url     = {https://api.semanticscholar.org/CorpusID:276558261}
+}
+```

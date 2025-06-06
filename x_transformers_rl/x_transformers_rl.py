@@ -66,6 +66,8 @@ from x_transformers_rl.evolution import (
     LatentGenePool
 )
 
+from x_mlps_pytorch.nff import nFeedforwards, norm_weights_
+
 from x_mlps_pytorch.mlp import MLP, create_mlp
 
 # memory tuple
@@ -418,11 +420,12 @@ class WorldModelActorCritic(Module):
 
         action_type_klass = Discrete if not continuous_actions else Continuous
 
-        self.action_head = MLP(
-            actor_critic_input_dim,
-            dim * 2,
-            action_type_klass.dim_out(num_actions),
-            activation = nn.SiLU()
+        self.action_head = nFeedforwards(
+            dim,
+            depth = 1,
+            dim_in = actor_critic_input_dim,
+            dim_out = action_type_klass.dim_out(num_actions),
+            input_preserve_magnitude = True
         )
 
         if continuous_actions and squash_continuous:
@@ -1140,6 +1143,10 @@ class Agent(Module):
 
                 optimizer.step()
                 optimizer.zero_grad()
+
+                # norm any weights
+
+                norm_weights_(self)
 
                 # log losses
 
