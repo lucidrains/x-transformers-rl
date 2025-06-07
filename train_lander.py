@@ -4,7 +4,7 @@ import gymnasium as gym
 from shutil import rmtree
 
 evolutionary = False
-continuous_actions = False
+continuous_actions = True
 
 env = gym.make(
     'LunarLander-v3',
@@ -54,6 +54,7 @@ learner = Learner(
         actor_critic_world_model = dict(
             frac_critic_head_gradient = 5e-2,
             frac_actor_head_gradient = 5e-2,
+            actor_use_norm_ff = continuous_actions
         ),
         world_model_embed_linear_schedule = (5., 20.) # world model incorporated from steps 5 to 20
     ),
