@@ -235,17 +235,30 @@ class SafeEmbedding(Module):
     def __init__(
         self,
         num_tokens,
-        dim
+        dim,
+        num_set_actions = 1
     ):
         super().__init__()
-        self.embed = nn.Embedding(num_tokens, dim)
+        self.embed = nn.Embedding(num_set_actions * num_tokens, dim)
+        self.num_set_actions = num_set_actions
 
-    def forward(self, actions):
+        self.register_buffer('offsets', arange(num_set_actions) * num_tokens, persistent = False)
+
+    def forward(
+        self,
+        actions
+    ):
+        if self.num_set_actions == 1:
+            actions = rearrange(actions, '... -> ... 1')
+
         has_actions = actions >= 0.
         actions = torch.where(has_actions, actions, 0)
+
+        actions = actions + self.offsets
         embeds = self.embed(actions)
-        embeds = where('b n, b n d, ', has_actions, embeds, 0.)
-        return embeds
+        embeds = where('... a, ... a d, ', has_actions, embeds, 0.)
+
+        return reduce(embeds, '... a d -> ... d', 'sum')
 
 class Discrete:
     def __init__(
@@ -329,6 +342,7 @@ class WorldModelActorCritic(Module):
         state_pred_num_bins = 50,
         continuous_actions = False,
         squash_continuous = False,
+        num_set_actions = 1,
         frac_actor_head_gradient = 5e-2,
         frac_critic_head_gradient = 5e-2,
         entropy_weight = 0.02,
@@ -353,7 +367,7 @@ class WorldModelActorCritic(Module):
         self.reward_embed = nn.Parameter(ones(dim) * 1e-2)
 
         if not continuous_actions:
-            self.action_embeds = SafeEmbedding(num_actions, dim)
+            self.action_embeds = SafeEmbedding(num_actions, dim, num_set_actions)
         else:
             self.action_embeds = nn.Sequential(
                 MLP(num_actions, dim * 2, dim, activation = nn.SiLU()),
@@ -445,8 +459,10 @@ class WorldModelActorCritic(Module):
             dim,
             depth = actor_ff_depth,
             dim_in = actor_critic_input_dim,
-            dim_out = action_type_klass.dim_out(num_actions),
+            dim_out = action_type_klass.dim_out(num_actions) * num_set_actions,
         )
+
+        self.num_set_actions = num_set_actions # refactor later, make it work first
 
         if continuous_actions and squash_continuous:
             action_type_klass = partial(action_type_klass, squash = True)
@@ -713,6 +729,9 @@ class WorldModelActorCritic(Module):
 
         raw_actions = self.action_head(cat((head_input, actor_embed), dim = -1))
 
+        if self.num_set_actions > 1:
+            raw_actions = rearrange(raw_actions, '... (action_sets actions) -> ... action_sets actions', action_sets = self.num_set_actions)
+
         # values
 
         values = self.critic_head(cat((head_input, critic_embed), dim = -1))
@@ -838,6 +857,7 @@ class Agent(Module):
         evolutionary = False,
         evolve_every = 1,
         evolve_after_step = 20,
+        num_set_actions = 1,
         latent_gene_pool: dict = dict(
             dim = 128,
             num_genes_per_island = 3,
@@ -884,6 +904,7 @@ class Agent(Module):
 
         self.model = WorldModelActorCritic(
             num_actions = num_actions,
+            num_set_actions = num_set_actions,
             continuous_actions = continuous_actions,
             squash_continuous = squash_continuous,
             critic_dim_pred = critic_pred_num_bins,
@@ -1278,7 +1299,10 @@ class Learner(Module):
         num_actions,
         reward_range,
         world_model: dict,
+        num_set_actions = 1,
         continuous_actions = False,
+        discretize_continuous = False,
+        continuous_discretized_bins = 50,
         squash_continuous = True,
         continuous_actions_clamp: tuple[float, float] | None = None,
         evolutionary = False,
@@ -1311,8 +1335,24 @@ class Learner(Module):
 
         self.accelerator = Accelerator(**accelerate_kwargs)
 
+        # if doing continuous actions but want it discretized, have the learning orchestrator take care of converting the discrete to continuous from agent -> env
+
+        self.discrete_to_continuous = None
+
+        if continuous_actions and discretize_continuous:
+            continuous_actions = False
+            num_set_actions = num_actions  # fix this later, num actions for continuous should be 1
+            num_actions = continuous_discretized_bins
+            assert exists(continuous_actions_clamp)
+
+            min_val, max_val = continuous_actions_clamp
+            self.discrete_to_continuous = torch.linspace(min_val, max_val, continuous_discretized_bins)
+
+        self.num_set_actions = num_set_actions
+
         self.agent = Agent(
             state_dim = state_dim,
+            num_set_actions = num_set_actions,
             num_actions = num_actions,
             continuous_actions = continuous_actions,
             squash_continuous = squash_continuous,
@@ -1468,7 +1508,8 @@ class Learner(Module):
                 if self.continuous_actions:
                     prev_action = zeros((self.num_actions,), device = device)
                 else:
-                    prev_action = tensor(-1).to(device)
+                    prev_action = -1 if self.num_set_actions == 1 else ([-1] * self.num_set_actions)
+                    prev_action = tensor(prev_action, device = device)
 
                 prev_reward = tensor(0.).to(device)
 
@@ -1503,7 +1544,7 @@ class Learner(Module):
                         world_model_embed_mult = agent.world_model_embed_mult
                     )
 
-                    raw_actions = rearrange(raw_actions, '1 1 d -> d')
+                    raw_actions = rearrange(raw_actions, '1 1 ... -> ...')
                     values = rearrange(values, '1 1 d -> d')
 
                     state_pred = state_pred[:, -1] # last token, in the case of sos token added
@@ -1521,13 +1562,18 @@ class Learner(Module):
                     action = dist.sample()
                     action_log_prob = dist.log_prob(action)
 
-                    if self.continuous_actions and exists(self.continuous_actions_clamp):
+                    action_to_env = action.cpu()
+
+                    if exists(self.discrete_to_continuous):
+                        action_to_env = self.discrete_to_continuous[action_to_env]
+
+                    elif self.continuous_actions and exists(self.continuous_actions_clamp):
                         # environment clamping for now, before incorporating squashed gaussian etc
 
                         clamp_min, clamp_max = self.continuous_actions_clamp
                         action.clamp_(clamp_min, clamp_max)
 
-                    env_step_out = env.step(action.tolist())
+                    env_step_out = env.step(action_to_env.tolist())
 
                     if len(env_step_out) >= 4:
                         next_state, reward, terminated, truncated, *_ = env_step_out
