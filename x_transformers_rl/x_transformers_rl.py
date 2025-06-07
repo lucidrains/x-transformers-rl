@@ -1286,7 +1286,7 @@ class Agent(Module):
             cache = hiddens,
         )
 
-        raw_actions = rearrange(raw_actions, '1 1 d -> d')
+        raw_actions = rearrange(raw_actions, '1 1 ... -> ...')
 
         return raw_actions, next_hiddens
 
@@ -1336,6 +1336,8 @@ class Learner(Module):
         self.accelerator = Accelerator(**accelerate_kwargs)
 
         # if doing continuous actions but want it discretized, have the learning orchestrator take care of converting the discrete to continuous from agent -> env
+
+        # todo - move logic onto Agent so during deployment mapping is taken care of there
 
         self.discrete_to_continuous = None
 

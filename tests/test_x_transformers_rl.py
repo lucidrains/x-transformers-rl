@@ -28,6 +28,7 @@ def test_e2e(
         batch_size = 2,
         num_episodes_per_update = 2,
         continuous_actions = continuous_actions,
+        continuous_actions_clamp = (-1., 1.),
         evolutionary = evolutionary,
         latent_gene_pool = dict(
             dim = 32,
