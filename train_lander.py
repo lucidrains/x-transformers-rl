@@ -3,9 +3,8 @@
 import gymnasium as gym
 from shutil import rmtree
 
-evolutionary = False
+evolutionary = True
 continuous_actions = True
-discretize_continuous = True
 
 env = gym.make(
     'LunarLander-v3',
@@ -26,7 +25,6 @@ learner = Learner(
     state_dim = state_dim,
     num_actions = num_actions,
     continuous_actions = continuous_actions,
-    discretize_continuous = discretize_continuous,
     reward_range = reward_range,
     continuous_actions_clamp = continuous_actions_clamp,
     squash_continuous = True,
@@ -55,8 +53,7 @@ learner = Learner(
         actor_loss_weight = 0.5,
         actor_critic_world_model = dict(
             frac_critic_head_gradient = 5e-2,
-            frac_actor_head_gradient = 5e-2,
-            actor_use_norm_ff = continuous_actions and not discretize_continuous
+            frac_actor_head_gradient = 5e-2
         ),
         world_model_embed_linear_schedule = (5., 20.) # world model incorporated from steps 5 to 20
     ),

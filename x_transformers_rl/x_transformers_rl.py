@@ -1301,7 +1301,7 @@ class Learner(Module):
         world_model: dict,
         num_set_actions = 1,
         continuous_actions = False,
-        discretize_continuous = False,
+        discretize_continuous = True,
         continuous_discretized_bins = 50,
         squash_continuous = True,
         continuous_actions_clamp: tuple[float, float] | None = None,
