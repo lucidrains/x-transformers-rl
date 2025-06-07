@@ -67,6 +67,7 @@ from x_transformers_rl.evolution import (
 )
 
 from x_mlps_pytorch.nff import nFeedforwards, norm_weights_
+from x_mlps_pytorch.ff import Feedforwards
 
 from x_mlps_pytorch.mlp import MLP, create_mlp
 
@@ -342,6 +343,8 @@ class WorldModelActorCritic(Module):
         norm_advantages_stats_momentum = 0.25, # 1. would mean not to use exponential smoothing
         actor_ff_depth = 1,
         critic_ff_depth= 2, # certain paper say critic needs to be larger than actor, although in this setting where both draws and slowly shapes the world model, not sure
+        actor_use_norm_ff = False,
+        critic_use_norm_ff = False,
     ):
         super().__init__()
         self.transformer = transformer
@@ -412,17 +415,19 @@ class WorldModelActorCritic(Module):
 
         # actor critic
 
+        actor_net_klass = partial(nFeedforwards, input_preserve_magnitude = True) if actor_use_norm_ff else partial(Feedforwards, final_norm = True)
+        critic_net_klass = partial(nFeedforwards, input_preserve_magnitude = True) if critic_use_norm_ff else partial(Feedforwards, final_norm = True)
+
         actor_critic_input_dim = dim * 2  # gets the embedding from the world model as well as a direct projection from the state
 
         if evolutionary:
             actor_critic_input_dim += dim
 
-        self.critic_head = nFeedforwards(
+        self.critic_head = critic_net_klass(
             dim,
             depth = critic_ff_depth,
             dim_in = actor_critic_input_dim,
             dim_out = critic_dim_pred,
-            input_preserve_magnitude = True
         )
 
         # https://arxiv.org/abs/2403.03950
@@ -436,12 +441,11 @@ class WorldModelActorCritic(Module):
 
         action_type_klass = Discrete if not continuous_actions else Continuous
 
-        self.action_head = nFeedforwards(
+        self.action_head = actor_net_klass(
             dim,
             depth = actor_ff_depth,
             dim_in = actor_critic_input_dim,
             dim_out = action_type_klass.dim_out(num_actions),
-            input_preserve_magnitude = True
         )
 
         if continuous_actions and squash_continuous:
