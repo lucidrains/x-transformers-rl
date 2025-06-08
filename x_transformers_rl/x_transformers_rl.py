@@ -20,6 +20,7 @@ from torch.nn import Module
 from torch.utils.data import TensorDataset, DataLoader
 from torch.distributions import Categorical, Normal
 from torch.utils._pytree import tree_map
+from torch.nested import nested_tensor
 
 from torch.nn.utils.rnn import pad_sequence
 pad_sequence = partial(pad_sequence, batch_first = True)
@@ -190,11 +191,21 @@ def temp_batch_dim(fn):
     return inner
 
 def pack_with_inverse(t, pattern):
+    pack_one = is_tensor(t)
+
+    if pack_one:
+        t = [t]
+
     packed, shapes = pack(t, pattern)
 
     def inverse(out, inv_pattern = None):
         inv_pattern = default(inv_pattern, pattern)
-        return unpack(out, shapes, inv_pattern)
+        out = unpack(out, shapes, inv_pattern)
+
+        if pack_one:
+            out = first(out)
+
+        return out
 
     return packed, inverse
 
@@ -230,6 +241,63 @@ def linear_schedule(min_step, max_step, max_val):
     return calc_value
 
 # action related
+
+def max_neg_value(t):
+    return -torch.finfo(t.dtype).max
+
+def gumbel_noise(t):
+    noise = torch.rand_like(t)
+    return -log(-log(noise))
+
+def to_nested_tensor_and_inverse(tensors):
+    jagged_dims = tuple(t.shape[-1] for t in tensors)
+
+    tensor = cat(tensors, dim = -1)
+
+    tensor, inverse_batch_pack = pack_with_inverse(tensor, '* n')
+
+    batch = tensor.shape[0]
+
+    tensor = rearrange(tensor, 'b n -> (b n)')
+
+    nt = nested_tensor(tensor.split(jagged_dims * batch), layout = torch.jagged, device = tensor.device, requires_grad = True)
+
+    def inverse(t):
+        t = cat(t.unbind())
+        out = rearrange(t, '(b n) -> b n', b = batch)
+        return inverse_batch_pack(out)
+
+    return nt, inverse, inverse_batch_pack
+
+def nested_sum(t, lens: tuple[int, ...]):
+    # needed as backwards not supported for sum with nested tensor
+
+    batch, device = t.shape[0], t.device
+
+    lens = tensor(lens, device = device)
+    indices = lens.cumsum(dim = -1) - 1
+    indices = repeat(indices, 'n -> b n', b = batch)
+
+    cumsum = t.cumsum(dim = -1)
+    sum_at_indices = cumsum.gather(-1, indices)
+    sum_at_indices = F.pad(sum_at_indices, (1, 0), value = 0.)
+
+    return sum_at_indices[..., 1:] - sum_at_indices[..., :-1]
+
+def nested_argmax(t, lens: tuple[int, ...]):
+    batch, device = t.shape[0], t.device
+
+    t, inverse_batch_pack = pack_with_inverse(t, '* nl')
+
+    t = rearrange(t, 'b nl -> nl b')
+    split_tensors = t.split(lens, dim = 0)
+
+    padded_tensors = pad_sequence(split_tensors, batch_first = True, padding_value = max_neg_value(t))
+    padded_tensors = rearrange(padded_tensors, 'n l b -> b n l')
+
+    out = padded_tensors.argmax(dim = -1)
+
+    return inverse_batch_pack(out)
 
 class SafeEmbedding(Module):
     def __init__(
@@ -281,6 +349,47 @@ class Discrete:
 
     def entropy(self):
         return self.dist.entropy()
+
+class MultiDiscrete:
+    def __init__(
+        self,
+        raw_actions: Tensor | list[Tensor],
+        bin_lens: list[int] | None = None
+    ):
+        if is_tensor(raw_actions):
+            assert exists(bin_lens)
+            raw_actions = raw_actions.split(bin_lens, dim = -1)
+
+        if not exists(bin_lens):
+            bin_lens = [t.shape[-1] for t in raw_actions]
+
+        self.raw_actions = cat(raw_actions, dim = -1)
+        self.bin_lens = bin_lens
+
+        nested_raw_actions, self.inv_nested, self.inv_batch_pack = to_nested_tensor_and_inverse(raw_actions)
+        self.nested_raw_actions = nested_raw_actions
+
+    def sample(self):
+        noise = gumbel_noise(self.raw_actions)
+        noised_logits = self.raw_actions + noise
+        return nested_argmax(noised_logits, self.bin_lens)
+
+    def log_prob(self, values):
+        prob = self.nested_raw_actions.softmax(dim = -1)
+        log_prob = log(prob)
+        log_prob = self.inv_nested(log_prob)
+
+        offsets = tensor(self.bin_lens, device = values.device).cumsum(dim = -1)
+        offsets = F.pad(offsets, (1, -1), value = 0.)
+
+        indices = values + offsets
+        return log_prob.gather(-1, indices)
+
+    def entropy(self):
+        prob = self.nested_raw_actions.softmax(dim = -1)
+        entropies = (-log(prob) * prob).sum(dim = -1)
+        entropies = rearrange(entropies, '(b nl) -> b nl', nl = len(self.bin_lens))
+        return self.inv_batch_pack(entropies, '* nl')
 
 class Continuous:
     def __init__(
@@ -356,7 +465,7 @@ class WorldModelActorCritic(Module):
         distributed_normalize = True,
         norm_advantages_stats_momentum = 0.25, # 1. would mean not to use exponential smoothing
         actor_ff_depth = 1,
-        critic_ff_depth= 2, # certain paper say critic needs to be larger than actor, although in this setting where both draws and slowly shapes the world model, not sure
+        critic_ff_depth = 2, # certain paper say critic needs to be larger than actor, although in this setting where both draws and slowly shapes the world model, not sure
         actor_use_norm_ff = False,
         critic_use_norm_ff = False,
     ):

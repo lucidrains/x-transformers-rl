@@ -52,3 +52,47 @@ def test_e2e(
     hiddens = None
     actions, hiddens = agent(np.random.randn(5), hiddens = hiddens)
     actions, hiddens = agent(np.random.randn(5), hiddens = hiddens)
+
+# action spaces related
+
+def test_multi_discrete():
+    import torch
+
+    from x_transformers_rl.x_transformers_rl import (
+        Discrete,
+        MultiDiscrete
+    )
+
+    logits = [
+        torch.randn(3, 4, 16, 5),
+        torch.randn(3, 4, 16, 12),
+        torch.randn(3, 4, 16, 7)
+    ]
+
+    lens = [t.shape[-1] for t in logits]
+
+    dists = [Discrete(logit) for logit in logits]
+
+    samples = torch.stack([dist.sample() for dist in dists], dim = -1)
+    log_probs = torch.stack([dist.log_prob(value) for dist, value in zip(dists, samples.unbind(dim = -1))], dim = -1)
+    entropies = torch.stack([dist.entropy() for dist in dists], dim = -1)
+
+    assert (
+        samples.shape ==
+        entropies.shape ==
+        log_probs.shape ==
+        (3, 4, 16, 3)
+    )
+
+    multi_dist = MultiDiscrete(logits)
+
+    multi_sampled = multi_dist.sample()
+    multi_entropies = multi_dist.entropy()
+    multi_log_prob = multi_dist.log_prob(multi_sampled)
+
+    assert (
+        multi_sampled.shape ==
+        multi_entropies.shape ==
+        multi_log_prob.shape ==
+        (3, 4, 16, 3)
+    )
