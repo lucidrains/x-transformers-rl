@@ -876,6 +876,11 @@ class RSNorm(Module):
 
         return normalized * std + mean
 
+    @torch.no_grad()
+    def forward_eval(self, x):
+        self.eval()
+        return self.forward(x)
+
     def forward(
         self,
         x
@@ -1246,9 +1251,7 @@ class Agent(Module):
 
                 states_with_rewards, inverse_pack = pack_with_inverse((states, rewards), 'b n *')
 
-                with torch.no_grad():
-                    self.rsnorm.eval()
-                    states_with_rewards = self.rsnorm(states_with_rewards)
+                states_with_rewards = self.rsnorm.forward_eval(states_with_rewards)
 
                 states, rewards = inverse_pack(states_with_rewards)
 
@@ -1379,9 +1382,7 @@ class Agent(Module):
         if not has_reward:
             state = F.pad(state, (0, 1), value = 0.)
 
-        with torch.no_grad():
-            self.rsnorm.eval()
-            normed_state_with_reward = self.rsnorm(state)
+        normed_state_with_reward = self.rsnorm.forward_eval(state)
 
         normed_state = normed_state_with_reward[..., :-1]
 
