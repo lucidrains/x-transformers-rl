@@ -958,7 +958,7 @@ class Agent(Module):
         betas,
         lam,
         gamma,
-        beta_s,
+        entropy_weight,
         regen_reg_rate,
         cautious_factor,
         eps_clip,
@@ -1024,7 +1024,7 @@ class Agent(Module):
             critic_dim_pred = critic_pred_num_bins,
             critic_min_max_value = reward_range,
             state_dim = state_dim,
-            entropy_weight = beta_s,
+            entropy_weight = entropy_weight,
             eps_clip = eps_clip,
             value_clip = value_clip,
             evolutionary = evolutionary,
@@ -1079,7 +1079,7 @@ class Agent(Module):
 
         self.lam = lam
         self.gamma = gamma
-        self.beta_s = beta_s
+        self.entropy_weight = entropy_weight
 
         self.eps_clip = eps_clip
         self.value_clip = value_clip
@@ -1430,7 +1430,7 @@ class Learner(Module):
         gamma = 0.99,
         eps_clip = 0.2,
         value_clip = 0.4,
-        beta_s = .01,
+        entropy_weight = .01,
         regen_reg_rate = 1e-4,
         cautious_factor = 0.1,
         epochs = 3,
@@ -1481,7 +1481,7 @@ class Learner(Module):
             betas = betas,
             lam = lam,
             gamma = gamma,
-            beta_s = beta_s,
+            entropy_weight = entropy_weight,
             regen_reg_rate = regen_reg_rate,
             cautious_factor = cautious_factor,
             eps_clip = eps_clip,
