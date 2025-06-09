@@ -6,7 +6,7 @@ from math import ceil
 from pathlib import Path
 from copy import deepcopy
 from functools import partial, wraps
-from collections import deque, namedtuple
+from collections import namedtuple
 from random import random
 
 import numpy as np
@@ -723,6 +723,7 @@ class WorldModelActorCritic(Module):
         actions = None,
         rewards = None,
         reward_dropout: bool | Tensor | None = None,
+        prev_action_dropout: bool | Tensor | None = None,
         next_actions = None,
         latent_gene = None,
         world_model_embed_mult = 1.,
@@ -736,6 +737,16 @@ class WorldModelActorCritic(Module):
 
         if exists(actions):
             action_embeds = self.action_embeds(actions)
+
+            if not is_tensor(prev_action_dropout):
+                prev_action_dropout = tensor(prev_action_dropout, device = device)
+
+            if prev_action_dropout.ndim == 0:
+                prev_action_dropout = repeat(prev_action_dropout, '-> b', b = batch)
+
+            if exists(prev_action_dropout):
+                action_embeds = multiply('b ..., b -> b ...', action_embeds, (~prev_action_dropout).float())
+
             sum_embeds = sum_embeds + action_embeds
 
         if exists(rewards):
@@ -1140,6 +1151,7 @@ class Agent(Module):
         episode_lens,
         gene_ids,
         reward_dropouts,
+        prev_action_dropouts,
         fitnesses = None
     ):
 
@@ -1193,7 +1205,8 @@ class Agent(Module):
             is_boundaries,
             gene_ids,
             episode_lens,
-            reward_dropouts
+            reward_dropouts,
+            prev_action_dropouts
         )
 
         if is_distributed():
@@ -1229,7 +1242,8 @@ class Agent(Module):
                 dones,
                 gene_ids,
                 episode_lens,
-                reward_dropout
+                reward_dropout,
+                prev_action_dropout
              ) in dl:
 
                 latent_gene = None
@@ -1259,6 +1273,7 @@ class Agent(Module):
                     states,
                     rewards = rewards,
                     reward_dropout = reward_dropout,
+                    prev_action_dropout = prev_action_dropout,
                     actions = prev_actions,
                     latent_gene = latent_gene,
                     next_actions = actions, # prediction of the next state needs to be conditioned on the agent's chosen action on that state, and will make the world model interactable
@@ -1419,6 +1434,7 @@ class Learner(Module):
         evolve_every = 10,
         evolve_after_step = 20,
         reward_dropout_prob = 0.5,
+        action_dropout_prob = 0.5,
         curiosity_reward_weight = 0.,
         latent_gene_pool: dict | None = None,
         max_timesteps = 500,
@@ -1530,6 +1546,10 @@ class Learner(Module):
 
         self.reward_dropout_prob = reward_dropout_prob
 
+        # action dropout for world models
+
+        self.action_dropout_prob = action_dropout_prob
+
         # weight for curiosity reward, based on entropy of state prediction
 
         self.curiosity_reward_weight = curiosity_reward_weight
@@ -1558,10 +1578,11 @@ class Learner(Module):
 
         agent, device, num_episodes_per_update, is_main = self.agent, self.device, self.num_episodes_per_update, self.accelerator.is_main_process
 
-        memories = deque([])
+        memories = []
         episode_lens = []
         gene_ids = []
         one_update_reward_dropouts = []
+        one_update_action_dropouts = []
 
         if exists(seed):
             torch.manual_seed(seed)
@@ -1595,6 +1616,12 @@ class Learner(Module):
 
             reward_dropouts = torch.rand((num_episodes_per_update,), device = device) < self.reward_dropout_prob
 
+            # precompute prev action dropouts
+
+            action_dropouts = torch.rand((num_episodes_per_update,), device = device) < self.action_dropout_prob
+
+            # roll out episode for a world model (optionally of a given gene) against environment
+
             for episode, gene_id in tqdm(self.episode_genes_for_process, desc = 'episodes' if not agent.evolutionary else 'episodes-genes', position = 1, disable = not is_main, leave = False):
 
                 latent_gene = None
@@ -1605,9 +1632,11 @@ class Learner(Module):
                     episode_seed = episode_seeds[episode]
                     reset_kwargs.update(seed = episode_seed.item())
 
-                one_episode_memories = deque([])
+                one_episode_memories = []
 
                 reward_dropout = reward_dropouts[episode]
+                prev_action_dropout = action_dropouts[episode]
+
                 reset_out = env.reset(**reset_kwargs)
 
                 if isinstance(reset_out, tuple):
@@ -1633,8 +1662,7 @@ class Learner(Module):
 
                     state_with_reward, inverse_pack = pack_with_inverse((state, prev_reward), '*')
 
-                    self.agent.rsnorm.eval()
-                    normed_state_reward = self.agent.rsnorm(state_with_reward)
+                    normed_state_reward = self.agent.rsnorm.forward_eval(state_with_reward)
 
                     normed_state, normed_reward = inverse_pack(normed_state_reward)
 
@@ -1650,6 +1678,7 @@ class Learner(Module):
                         normed_state,
                         rewards = normed_reward,
                         reward_dropout = reward_dropout,
+                        prev_action_dropout = prev_action_dropout,
                         latent_gene = latent_gene,
                         cache = world_model_cache,
                         actions = prev_action,
@@ -1745,6 +1774,7 @@ class Learner(Module):
                 episode_lens.append(timestep + 1)
                 gene_ids.append(gene_id)
                 one_update_reward_dropouts.append(reward_dropout)
+                one_update_action_dropouts.append(prev_action_dropout)
 
                 # add list[Memory] to all episode memories list[list[Memory]]
 
@@ -1762,6 +1792,7 @@ class Learner(Module):
                 tensor(episode_lens, device = device),
                 tensor(gene_ids, device = device),
                 stack(one_update_reward_dropouts),
+                stack(one_update_action_dropouts),
                 fitnesses
             )
 
@@ -1769,6 +1800,7 @@ class Learner(Module):
             episode_lens.clear()
             gene_ids.clear()
             one_update_reward_dropouts.clear()
+            one_update_action_dropouts.clear()
 
             if divisible_by(learning_update, self.save_every):
                 self.agent.save()
