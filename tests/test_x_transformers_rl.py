@@ -77,22 +77,8 @@ def test_multi_discrete():
     log_probs = torch.stack([dist.log_prob(value) for dist, value in zip(dists, samples.unbind(dim = -1))], dim = -1)
     entropies = torch.stack([dist.entropy() for dist in dists], dim = -1)
 
-    assert (
-        samples.shape ==
-        entropies.shape ==
-        log_probs.shape ==
-        (3, 4, 16, 3)
-    )
-
     multi_dist = MultiDiscrete(logits)
 
-    multi_sampled = multi_dist.sample()
-    multi_entropies = multi_dist.entropy()
-    multi_log_prob = multi_dist.log_prob(multi_sampled)
-
-    assert (
-        multi_sampled.shape ==
-        multi_entropies.shape ==
-        multi_log_prob.shape ==
-        (3, 4, 16, 3)
-    )
+    assert multi_dist.sample().shape == (3, 4, 16, 3)
+    assert torch.allclose(multi_dist.entropy(), entropies)
+    assert torch.allclose(multi_dist.log_prob(samples), log_probs)
