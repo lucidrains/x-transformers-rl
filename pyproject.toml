@@ -1,6 +1,6 @@
 [project]
 name = "x-transformers-rl"
-version = "0.0.89"
+version = "0.0.90"
 description = "X-Transformer for RL"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
@@ -31,7 +31,7 @@ dependencies = [
     'einops>=0.8.0',
     'ema-pytorch',
     'hl-gauss-pytorch>=0.1.22',
-    'torch>=2.4',
+    'torch>=2.5',
     'tqdm',
     'vector-quantize-pytorch>=1.22.6',
     'x-mlps-pytorch>=0.0.18',
