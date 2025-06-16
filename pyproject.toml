@@ -35,7 +35,7 @@ dependencies = [
     'tqdm',
     'vector-quantize-pytorch>=1.22.6',
     'x-mlps-pytorch>=0.0.20',
-    'x-transformers>=2.3.12',
+    'x-transformers>=2.3.19',
 ]
 
 [project.urls]
