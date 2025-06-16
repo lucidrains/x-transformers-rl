@@ -16,7 +16,7 @@ import torch
 from torch import nn, tensor, Tensor, is_tensor, cat, stack, zeros, ones, full, arange
 import torch.distributed as dist
 import torch.nn.functional as F
-from torch.nn import Module
+from torch.nn import Module, GRU
 from torch.utils.data import TensorDataset, DataLoader
 from torch.distributions import Categorical, Normal
 from torch.utils._pytree import tree_map
@@ -989,9 +989,10 @@ class Agent(Module):
             num_selected = 2,
             tournament_size = 2
         ),
+        world_model_attn_dim_head = 16,
+        world_model_heads = 4,
+        world_model_attn_hybrid_gru = False,
         world_model: dict = dict(
-            attn_dim_head = 16,
-            heads = 4,
             depth = 4,
             attn_gate_values = True,
             add_value_residual = True,
@@ -1027,6 +1028,8 @@ class Agent(Module):
         if evolutionary:
             self.gene_pool = LatentGenePool(**latent_gene_pool)
 
+        maybe_gru = GRU(hidden_dim, world_model_attn_dim_head * world_model_heads, batch_first = True) if world_model_attn_hybrid_gru else None
+
         self.model = WorldModelActorCritic(
             num_actions = num_actions,
             num_set_actions = num_set_actions,
@@ -1051,6 +1054,10 @@ class Agent(Module):
                     attn_dropout = dropout,
                     ff_dropout = dropout,
                     verbose = False,
+                    attn_hybrid_fold_axial_dim = 1,
+                    attn_hybrid_module = maybe_gru,
+                    attn_dim_head = world_model_attn_dim_head,
+                    heads = world_model_heads,
                     **world_model
                 )
             ),

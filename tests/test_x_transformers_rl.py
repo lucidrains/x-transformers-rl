@@ -3,9 +3,11 @@ import numpy as np
 
 @pytest.mark.parametrize('evolutionary', (False, True))
 @pytest.mark.parametrize('continuous_actions', (False, True))
+@pytest.mark.parametrize('world_model_gru', (False, True))
 def test_e2e(
     evolutionary,
-    continuous_actions
+    continuous_actions,
+    world_model_gru
 ):
     class Sim:
         def reset(self, seed = None):
@@ -36,9 +38,10 @@ def test_e2e(
             num_selected = 2,
             tournament_size = 2
         ),
+        agent_kwargs = dict(
+            world_model_attn_hybrid_gru = world_model_gru
+        ),
         world_model = dict(
-            attn_dim_head = 16,
-            heads = 4,
             depth = 1,
         )
     )
