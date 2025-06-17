@@ -40,8 +40,6 @@ learner = Learner(
         tournament_size = 2
     ),
     world_model = dict(
-        attn_dim_head = 16,
-        heads = 4,
         depth = 4,
         attn_gate_values = True,
         add_value_residual = True,
@@ -55,6 +53,8 @@ learner = Learner(
             frac_critic_head_gradient = 5e-2,
             frac_actor_head_gradient = 5e-2
         ),
+        world_model_attn_dim_head = 16,
+        world_model_heads = 4,
         world_model_embed_linear_schedule = (5., 20.) # world model incorporated from steps 5 to 20
     ),
 )
