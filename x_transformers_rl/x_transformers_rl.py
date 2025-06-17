@@ -784,6 +784,7 @@ class WorldModelActorCritic(Module):
             *args,
             **kwargs,
             cache = cache,
+            input_not_include_cache = True,
             sum_embeds = sum_embeds,
             prepend_embeds = prepend_embeds,
             return_embeddings = True,

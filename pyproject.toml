@@ -1,6 +1,6 @@
 [project]
 name = "x-transformers-rl"
-version = "0.0.92"
+version = "0.0.93"
 description = "X-Transformer for RL"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
@@ -35,7 +35,7 @@ dependencies = [
     'tqdm',
     'vector-quantize-pytorch>=1.22.6',
     'x-mlps-pytorch>=0.0.20',
-    'x-transformers>=2.3.19',
+    'x-transformers>=2.3.21',
 ]
 
 [project.urls]
