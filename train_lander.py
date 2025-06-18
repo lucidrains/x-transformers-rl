@@ -55,6 +55,7 @@ learner = Learner(
         ),
         world_model_attn_dim_head = 16,
         world_model_heads = 4,
+        world_model_attn_hybrid_gru = True,
         world_model_embed_linear_schedule = (5., 20.) # world model incorporated from steps 5 to 20
     ),
 )
