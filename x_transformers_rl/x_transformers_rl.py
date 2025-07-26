@@ -404,10 +404,8 @@ class Continuous:
         mean, log_variance = raw_actions.unbind(dim = -1)
 
         variance = log_variance.exp()
+        std = (0.5 * log_variance).exp()
 
-        self.mean_variance = stack((mean, variance))
-
-        std = variance.clamp(min = eps).sqrt()
         self.dist = Normal(mean, std)
 
         self.squash = squash    
