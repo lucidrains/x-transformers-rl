@@ -694,13 +694,13 @@ class WorldModelActorCritic(Module):
 
         # using the proposal from https://www.authorea.com/users/855021/articles/1240083-on-analysis-of-clipped-critic-loss-in-proximal-policy-gradient
 
-        clipped_returns = returns.clamp(-clip, clip)
+        old_values_lo = scalar_old_values - clip
+        old_values_hi = scalar_old_values + clip
+
+        clipped_returns = returns.clamp(old_values_lo, old_values_hi)
 
         clipped_loss = hl_gauss(values, clipped_returns)
         loss = hl_gauss(values, returns)
-
-        old_values_lo = scalar_old_values - clip
-        old_values_hi = scalar_old_values + clip
 
         def is_between(mid, lo, hi):
             return (lo < mid) & (mid < hi)
