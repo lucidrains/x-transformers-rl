@@ -461,6 +461,7 @@ class WorldModelActorCritic(Module):
         latent_mapper_depth = 2,
         normalize_advantages = True,
         distributed_normalize = True,
+        use_simple_policy_optimization = False, # Xie et al. https://arxiv.org/abs/2401.16025v9 - claims to be more stable with bigger networks
         norm_advantages_stats_momentum = 0.25, # 1. would mean not to use exponential smoothing
         actor_ff_depth = 1,
         critic_ff_depth = 2, # certain paper say critic needs to be larger than actor, although in this setting where both draws and slowly shapes the world model, not sure
@@ -599,6 +600,10 @@ class WorldModelActorCritic(Module):
         self.eps_clip = eps_clip
         self.entropy_weight = entropy_weight
 
+        # spo
+
+        self.use_spo = use_simple_policy_optimization
+
         # clipped value loss related
 
         self.value_clip = value_clip
@@ -670,12 +675,22 @@ class WorldModelActorCritic(Module):
         # clipped surrogate objective
 
         ratios = (action_log_probs - old_log_probs).exp()
-        clipped_ratios = ratios.clamp(1 - self.eps_clip, 1 + self.eps_clip)
 
-        surr1 = multiply('b n ..., b n ->  b n ...', ratios, advantages)
-        surr2 = multiply('b n ..., b n ->  b n ...', clipped_ratios, advantages)
+        if not self.use_spo:
+            actor_loss = - (
+                multiply('b n ..., b n ->  b n ...', ratios, advantages) -
+                multiply('b n ..., b n ->  b n ...', (ratios - 1.).square(), advantages.abs() / (2 * self.eps_clip))
+            )
 
-        actor_loss = - torch.min(surr1, surr2) - self.entropy_weight * entropy
+        else:
+            clipped_ratios = ratios.clamp(1 - self.eps_clip, 1 + self.eps_clip)
+
+            surr1 = multiply('b n ..., b n ->  b n ...', ratios, advantages)
+            surr2 = multiply('b n ..., b n ->  b n ...', clipped_ratios, advantages)
+
+            actor_loss = - torch.min(surr1, surr2)
+
+        actor_loss = actor_loss - self.entropy_weight * entropy # contrived exploration
 
         actor_loss = reduce(actor_loss, 'b n ... -> b n', 'sum')
 

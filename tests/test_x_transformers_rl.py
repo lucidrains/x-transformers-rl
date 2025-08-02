@@ -1,13 +1,17 @@
 import pytest
 import numpy as np
 
-@pytest.mark.parametrize('evolutionary', (False, True))
-@pytest.mark.parametrize('continuous_actions', (False, True))
-@pytest.mark.parametrize('world_model_gru', (False, True))
+param = pytest.mark.parametrize
+
+@param('evolutionary', (False, True))
+@param('continuous_actions', (False, True))
+@param('world_model_gru', (False, True))
+@param('use_spo', (False, True))
 def test_e2e(
     evolutionary,
     continuous_actions,
-    world_model_gru
+    world_model_gru,
+    use_spo
 ):
     class Sim:
         def reset(self, seed = None):
@@ -39,11 +43,14 @@ def test_e2e(
             tournament_size = 2
         ),
         agent_kwargs = dict(
-            world_model_attn_hybrid_gru = world_model_gru
+            world_model_attn_hybrid_gru = world_model_gru,
+            actor_critic_world_model = dict(
+                use_simple_policy_optimization = use_spo,
+            )
         ),
         world_model = dict(
             depth = 1,
-        )
+        ),
     )
 
     learner(sim, 1)

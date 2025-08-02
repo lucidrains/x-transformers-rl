@@ -98,3 +98,16 @@ $ python train_lander.py
     url     = {https://api.semanticscholar.org/CorpusID:276558261}
 }
 ```
+
+```bibtex
+@misc{xie2025simplepolicyoptimization,
+    title   = {Simple Policy Optimization}, 
+    author  = {Zhengpeng Xie and Qiang Zhang and Fan Yang and Marco Hutter and Renjing Xu},
+    year    = {2025},
+    eprint  = {2401.16025},
+    archivePrefix = {arXiv},
+    primaryClass = {cs.LG},
+    url = {https://arxiv.org/abs/2401.16025}, 
+}
+```
+
