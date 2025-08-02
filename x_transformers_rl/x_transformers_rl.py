@@ -714,8 +714,8 @@ class WorldModelActorCritic(Module):
 
         clipped_returns = returns.clamp(old_values_lo, old_values_hi)
 
-        clipped_loss = hl_gauss(values, clipped_returns)
-        loss = hl_gauss(values, returns)
+        clipped_loss = hl_gauss(values, clipped_returns, reduction = 'none')
+        loss = hl_gauss(values, returns, reduction = 'none')
 
         def is_between(mid, lo, hi):
             return (lo < mid) & (mid < hi)
