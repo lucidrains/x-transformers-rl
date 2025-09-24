@@ -1,3 +1,11 @@
+# /// script
+# dependencies = [
+#   "gymnasium[box2d]>=1.0.0",
+#   "moviepy>=1.0.3",
+#   "x-transformers-rl",
+# ]
+# ///
+
 # environment related
 
 import gymnasium as gym
