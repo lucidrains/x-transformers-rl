@@ -7,11 +7,13 @@ param = pytest.mark.parametrize
 @param('continuous_actions', (False, True))
 @param('world_model_gru', (False, True))
 @param('use_spo', (False, True))
+@param('add_entropy_to_advantage', (False, True))
 def test_e2e(
     evolutionary,
     continuous_actions,
     world_model_gru,
-    use_spo
+    use_spo,
+    add_entropy_to_advantage
 ):
     class Sim:
         def reset(self, seed = None):
@@ -46,6 +48,7 @@ def test_e2e(
             world_model_attn_hybrid_gru = world_model_gru,
             actor_critic_world_model = dict(
                 use_simple_policy_optimization = use_spo,
+                add_entropy_to_advantage =add_entropy_to_advantage
             )
         ),
         world_model = dict(

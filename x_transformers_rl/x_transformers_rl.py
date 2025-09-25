@@ -463,6 +463,9 @@ class WorldModelActorCritic(Module):
         distributed_normalize = True,
         use_simple_policy_optimization = False, # Xie et al. https://arxiv.org/abs/2401.16025v9 - claims to be more stable with bigger networks
         norm_advantages_stats_momentum = 0.25, # 1. would mean not to use exponential smoothing
+        add_entropy_to_advantage = False,   # Cheng et al.  https://arxiv.org/abs/2506.14758
+        entropy_to_advantage_kappa = 2.,
+        entropy_to_advantage_scale = 0.1,   # 0.1 for PPO tested in paper
         actor_ff_depth = 1,
         critic_ff_depth = 2, # certain paper say critic needs to be larger than actor, although in this setting where both draws and slowly shapes the world model, not sure
         actor_use_norm_ff = False,
@@ -604,6 +607,12 @@ class WorldModelActorCritic(Module):
 
         self.use_spo = use_simple_policy_optimization
 
+        # entropy perspective paper
+
+        self.add_entropy_to_advantage = add_entropy_to_advantage
+        self.entropy_to_advantage_kappa = entropy_to_advantage_kappa
+        self.entropy_to_advantage_scale = entropy_to_advantage_scale
+
         # clipped value loss related
 
         self.value_clip = value_clip
@@ -648,7 +657,14 @@ class WorldModelActorCritic(Module):
         dist = self.action_type_klass(raw_actions)
         action_log_probs = dist.log_prob(actions)
 
+        # entropy
+
         entropy = dist.entropy() if not self.squash_continuous else -action_log_probs
+
+        if entropy.ndim == 2:
+            entropy = rearrange(entropy, 'b n -> b n 1')
+
+        # old values
 
         scalar_old_values = self.critic_hl_gauss_loss(old_values)
 
@@ -672,21 +688,41 @@ class WorldModelActorCritic(Module):
 
             advantages = normalize_with_mean_var(advantages, mean, var)
 
+        # maybe encourage exploration by adding action entropy to advantages - Cheng et al.
+
+        if self.add_entropy_to_advantage:
+            entropy_scale, kappa = self.entropy_to_advantage_scale, self.entropy_to_advantage_kappa
+
+            entropy_reward = entropy_scale * entropy.detach()
+            max_entropy_reward = rearrange(advantages.abs() / kappa, 'b n -> b n 1')
+
+            advantages = einx.add('b n, b n a', advantages, entropy_reward.clamp(max = max_entropy_reward))
+
         # clipped surrogate objective
 
         ratios = (action_log_probs - old_log_probs).exp()
 
+        # conform to have 3 dimensions (b n a)
+
+        if advantages.ndim == 2:
+            advantages = rearrange(advantages, 'b n -> b n 1')
+
+        if ratios.ndim == 2:
+            ratios = rearrange(ratios, 'b n -> b n 1')
+
+        # spo or ppo
+
         if not self.use_spo:
             actor_loss = - (
-                multiply('b n ..., b n ->  b n ...', ratios, advantages) -
-                multiply('b n ..., b n ->  b n ...', (ratios - 1.).square(), advantages.abs() / (2 * self.eps_clip))
+                ratios * advantages -
+                (ratios - 1.).square() * advantages.abs() / (2 * self.eps_clip)
             )
 
         else:
             clipped_ratios = ratios.clamp(1 - self.eps_clip, 1 + self.eps_clip)
 
-            surr1 = multiply('b n ..., b n ->  b n ...', ratios, advantages)
-            surr2 = multiply('b n ..., b n ->  b n ...', clipped_ratios, advantages)
+            surr1 = ratios * advantages
+            surr2 = clipped_ratios * advantages
 
             actor_loss = - torch.min(surr1, surr2)
 
